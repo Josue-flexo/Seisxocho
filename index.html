@@ -2068,8 +2068,9 @@ function paroConfirmar(){
   cerrarModal('m-par');renderEsts();renderParos();
 }
 function estFinalizar(i){
-  // Candado: verificar que la estación anterior esté completada
-  if(i>0&&ests[i-1].status!=='completado'){
+  const esMaq=proEsOpMaquila();
+  // Candado: en partida interna verificar que la anterior esté completada
+  if(!esMaq&&i>0&&ests[i-1].status!=='completado'){
     alert(`Debes finalizar "${ests[i-1].nombre}" antes de finalizar "${ests[i].nombre}"`);
     return;
   }
@@ -3459,7 +3460,7 @@ async function sbActualizarEntrega(ent){
   if(!sbActivo)return;
   await sbReq('PATCH','entregas',{
     tiendas:ent.tiendas,status:ent.status,archivado:ent.archivado,
-    fecha_entregado:ent.fechaEntregado||null,updated_at:'now()'
+    fecha_entregado:ent.fechaEntregado||null
   },`?id=eq.${ent.id}`);
 }
 async function sbGuardarCliente(nombre){
@@ -3548,9 +3549,8 @@ async function sbCargarDatos(silencioso=false){
     if(!silencioso)sbMostrarEstado('conectado');
     else sbMostrarEstado('conectado');
     console.log('Supabase cargado: '+pedidos.length+' pedidos, '+paros.length+' paros');
-    // Actualizar todas las vistas
+    // Actualizar vistas — NO llamar ppRefresh para no sobreescribir preprensa activa
     renderPeds();renderOPs();renderPT();renderEntregas();renderParos();
-    if(ppInicializado)ppRefresh();
     if(proInicializado)proRefresh();
   }catch(e){
     console.error('Error cargando Supabase:',e);
@@ -3562,7 +3562,6 @@ async function sbCargarDatos(silencioso=false){
   try{renderOPs();}catch(e){console.error(e);}
   try{renderParos();}catch(e){console.error(e);}
   try{renderEntregas();}catch(e){console.error(e);}
-  try{if(ppInicializado)ppRefresh();}catch(e){}
   try{if(proInicializado)proRefresh();}catch(e){}
 }
 
