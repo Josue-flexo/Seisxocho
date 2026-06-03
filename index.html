@@ -730,7 +730,8 @@ function estadoPed(ped){
   return'proceso';
 }
 function getEstOP(op){
-  if(op.status==='cerrada')return'cerrada';
+  if(opsCerradas.some(c=>c.opId===op.id))return'cerrada';
+  if(opsRechazadas.some(r=>r.opId===op.id))return'rechazada';
   if((diseños[op.id]||[]).length>0)return'abierta';
   return'programada';
 }
