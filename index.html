@@ -1719,12 +1719,16 @@ function ppRenderCob(){
   const lineas=[];
   ped.lineas.forEach(l=>{
     if(SIN_CAR().includes(l.prod)){
-      // Agrupar por prod+tam — no hay carácter único
       lineas.push({...l,car:l.car||'N/A'});
     } else {
-      const ex=expandir(l.car,l.cant);
-      if(ex.ok)ex.lines.forEach(x=>lineas.push({...l,car:x.car,cant:x.cant}));
-      else lineas.push(l);
+      // Si el tamaño es Dama-Niño (legado), expandir en Dama y Niño
+      const tams=l.tam==='Dama-Niño'?['Dama','Niño']:[l.tam];
+      tams.forEach(tam=>{
+        const cantTam=l.tam==='Dama-Niño'?Math.round(l.cant/2):l.cant;
+        const ex=expandir(l.car,cantTam);
+        if(ex.ok)ex.lines.forEach(x=>lineas.push({...l,tam,car:x.car,cant:x.cant}));
+        else lineas.push({...l,tam,cant:cantTam});
+      });
     }
   });
   // Sumar TODAS las OPs del pedido — interno y maquila
@@ -2228,8 +2232,8 @@ function proCerrar(){
   if(!opActual){alert('No hay partida activa');return;}
   // Guard: evitar doble cierre
   if(opsCerradas.some(oc=>oc.opId===opActual.opId)){
-    alert('Esta partida ya fue cerrada.');
     $('pro-resultado').innerHTML='';
+    proCargarOP();
     return;
   }
   const mm=ests.find(e=>e.nombre==='Impresión')?.mermaMicas||0;
@@ -4047,15 +4051,9 @@ function ppUpdMaq(){
 // ════════════════════════════════════════════════════════
 let sbPollInterval=null;
 function sbIniciarPolling(){
+  // Polling desactivado temporalmente — el PATCH a Supabase necesita verificarse primero
+  // Se reactiva cuando confirmemos que los saves funcionan correctamente
   if(sbPollInterval)clearInterval(sbPollInterval);
-  // Sincronizar cada 30 segundos
-  sbPollInterval=setInterval(async()=>{
-    if(!sbActivo)return;
-    await sbCargarDatos(true);
-    // Indicador visual de última sync
-    const el=document.getElementById('sb-ultimo-sync');
-    if(el)el.textContent='Sync: '+ahora();
-  },30000);
 }
 
 // ════════════════════════════════════════════════════════
