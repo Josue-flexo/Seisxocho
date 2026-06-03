@@ -3457,6 +3457,7 @@ async function sbGuardarDiseno(opId,dis){
   const id=`${opId}-${dis.id}`;
   await sbReq('POST','disenos',[{
     id,op_id:opId,ped_id:dis.pedId,maquina:dis.maquina,micas:dis.micas,
+    pasadas:dis.pasadas||null,modelo:dis.modelo||'N/A',
     registros:dis.registros,total_pz:dis.totalPz,fecha:dis.fecha,ts:dis.ts
   }],'?on_conflict=id');
 }
@@ -3537,6 +3538,7 @@ async function sbCargarDatos(silencioso=false){
         diseños[d.op_id].push({
           id:dId,
           maquina:d.maquina,
+          modelo:d.modelo||'N/A',
           micas:d.micas,
           pasadas:d.pasadas||{color:0,barrier:0,spandex:0,glose:0,total:0},
           esMaquila:d.maquina==='Maquila'||(d.es_maquila===true),
