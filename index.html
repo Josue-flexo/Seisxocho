@@ -1830,28 +1830,29 @@ function proRefresh(){
   const sel=$('pro-ped'),cur=sel.value;
   sel.innerHTML=pedidos.map(p=>`<option value="${p.id}">${p.id} · ${p.nombre}</option>`).join('');
   if(cur&&pedidos.find(p=>p.id===cur))sel.value=cur;
-  // Siempre reconstruir OPs filtrando cerradas
   const ped=getPed(sel.value);
   const selOP=$('pro-op'),curOP=selOP.value;
   if(ped){
     const opsAbiertas=ped.ops.filter(o=>!opsCerradas.some(c=>c.opId===o.id));
     if(!opsAbiertas.length){
       selOP.innerHTML='<option value="">Todas las partidas cerradas</option>';
-      $('pro-ests').innerHTML='<div class="empty">Este pedido no tiene partidas abiertas.</div>';
-      $('pro-resultado').innerHTML='';
-      if(opActual)proActInfo();
+      if(!opActual){
+        $('pro-ests').innerHTML='<div class="empty">Este pedido no tiene partidas abiertas.</div>';
+        $('pro-resultado').innerHTML='';
+      }
       return;
     }
     selOP.innerHTML=opsAbiertas.map(o=>`<option value="${o.id}">Partida ${o.num}${o.maquila?' [Maquila]':''}</option>`).join('');
-    // Si la partida activa fue cerrada, seleccionar la primera abierta
-    if(!opsAbiertas.find(o=>o.id===curOP)){
-      selOP.value=opsAbiertas[0].id;
-    } else if(curOP){
+    // Mantener OP activa si sigue abierta, sino primera disponible
+    if(opActual&&opsAbiertas.find(o=>o.id===opActual.opId)){
+      selOP.value=opActual.opId;
+    } else if(curOP&&opsAbiertas.find(o=>o.id===curOP)){
       selOP.value=curOP;
+    } else {
+      selOP.value=opsAbiertas[0].id;
     }
   }
   if(opActual)proActInfo();
-  renderEsts();
 }
 function proCargaPed(){
   const ped=getPed($('pro-ped').value);
@@ -1926,7 +1927,11 @@ function proActInfo(){
   if(esMaq){
     $('pro-mp').textContent=pzTotal>0?`${pzTotal.toLocaleString()} pz · Maquila`:dis.length>0?'0 pz · Maquila':'Sin diseños en preprensa';
   } else {
-    $('pro-mp').textContent=micas?`${micas} micas · ${pzTotal.toLocaleString()} pz`:'Pendiente de preprensa';
+    const totalPasadas=dis.reduce((s,d)=>{
+      const pasTot=d.pasadas?.total||0;
+      return s+pasTot*(d.micas||0);
+    },0);
+    $('pro-mp').textContent=micas?`${micas} micas · ${pzTotal.toLocaleString()} pz${totalPasadas>0?' · '+totalPasadas.toLocaleString()+' pasadas':''}` :'Pendiente de preprensa';
   }
   $('pro-fl').textContent=ped.fecha;
 }
@@ -2345,31 +2350,32 @@ function proCerrar(){
   sbGuardarOpCerrada(opC);
   const pedParaGuardar=getPed(pedIdParaGuardar);
   if(pedParaGuardar)sbActualizarPedido(pedParaGuardar);
-  // Actualizar selector y mostrar pantalla limpia con confirmación
+  // Actualizar selector — quitar OP cerrada
   const pedIdCerrado=opActual?.pedId;
   const pedCerrado=getPed(pedIdCerrado);
   const selOP=$('pro-op');
   const opIdCerrada=opActual?.opId;
+  let opsAbiertasRestantes=[];
   if(pedCerrado&&selOP){
-    const opsAbiertas=pedCerrado.ops.filter(o=>!opsCerradas.some(c=>c.opId===o.id));
-    if(!opsAbiertas.length){
+    opsAbiertasRestantes=pedCerrado.ops.filter(o=>!opsCerradas.some(c=>c.opId===o.id));
+    if(!opsAbiertasRestantes.length){
       selOP.innerHTML='<option value="">Todas las partidas cerradas</option>';
-      opActual=null;
     } else {
-      selOP.innerHTML=opsAbiertas.map(o=>`<option value="${o.id}">Partida ${o.num}${o.maquila?' [Maquila]':''}</option>`).join('');
-      selOP.value=opsAbiertas[0].id;
-      opActual=null; // limpiar antes de llamar proCargarOP
+      selOP.innerHTML=opsAbiertasRestantes.map(o=>`<option value="${o.id}">Partida ${o.num}${o.maquila?' [Maquila]':''}</option>`).join('');
+      selOP.value=opsAbiertasRestantes[0].id;
     }
   }
-  // Mostrar pantalla limpia con confirmación — sin llamar proCargarOP todavía
+  // Limpiar opActual DESPUÉS de haber construido todo
+  opActual=null;
+  // Mostrar pantalla limpia con confirmación
   $('pro-ests').innerHTML=`
     <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:12px;padding:24px;text-align:center;margin-top:12px">
       <div style="font-size:32px;margin-bottom:10px">✅</div>
       <div style="font-size:15px;font-weight:700;color:#15803d;margin-bottom:6px">Partida cerrada</div>
       <div style="font-size:12px;color:#555;margin-bottom:4px">${opIdCerrada} · ${hoy()}</div>
       <div style="font-size:13px;color:#15803d;font-weight:600;margin-top:8px">${pzPT2.toLocaleString()} pz ingresadas a PT</div>
-      ${pedCerrado?.ops.filter(o=>!opsCerradas.some(c=>c.opId===o.id)).length?
-        `<button class="btn bp" style="margin-top:14px;width:100%" onclick="proCargarOP()">Seleccionar siguiente partida →</button>`
+      ${opsAbiertasRestantes.length?
+        `<button class="btn bp" style="margin-top:14px;width:100%" onclick="proCargarOP()">Siguiente partida: ${opsAbiertasRestantes[0].id} →</button>`
         :'<div style="font-size:12px;color:#888;margin-top:8px">No hay más partidas abiertas en este pedido</div>'}
     </div>`;
   $('pro-resultado').innerHTML='';
@@ -4154,6 +4160,30 @@ function sbIniciarPolling(){
           ptMap[k].pz=Math.max(ptMap[k].pz,e.pz);
         });
         inventarioPT=Object.values(ptMap);
+      }
+      // Cargar diseños nuevos que otros usuarios hayan guardado
+      const rDis=await sbReq('GET','disenos','','?select=*');
+      if(rDis){
+        rDis.forEach(d=>{
+          if(!diseños[d.op_id])diseños[d.op_id]=[];
+          const rawId=d.id||'';
+          const dId=rawId.match(/D\d+$/)?rawId.match(/D\d+$/)[0]:rawId.split('-').pop();
+          // Solo agregar si no existe ya — nunca sobreescribir
+          const existe=diseños[d.op_id].find(x=>x.id===dId);
+          if(!existe){
+            diseños[d.op_id].push({
+              id:dId,maquina:d.maquina,modelo:d.modelo||'N/A',micas:d.micas,
+              pasadas:d.pasadas||{color:0,barrier:0,spandex:0,glose:0,total:0},
+              esMaquila:d.maquina==='Maquila'||(d.es_maquila===true),
+              registros:d.registros||[],totalPz:d.total_pz,pedId:d.ped_id,fecha:d.fecha,ts:d.ts
+            });
+          }
+        });
+        // Si preprensa está activa y tiene la misma OP, actualizar diseños guardados
+        if(ppInicializado&&ppOpActual){
+          const elSaved=$('pp-saved');
+          if(elSaved)ppRenderSaved();
+        }
       }
       // Actualizar UI sin destruir estado activo
       renderPeds();renderOPs();renderPT();renderEntregas();
