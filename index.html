@@ -764,7 +764,31 @@ function tab(n){
   document.querySelectorAll('.nb').forEach(b=>b.classList.remove('on'));
   $('sc-'+n).classList.add('on');
   $('nb-'+n).classList.add('on');
-  if(n==='pre'){if(!ppInicializado){ppInicializado=true;ppCargarPeds();}else ppRefresh();}
+  if(n==='pre'){
+    if(!ppInicializado){ppInicializado=true;ppCargarPeds();}
+    else{
+      // Restaurar estado sin resetear ppR ni ppOpActual
+      const sel=$('pp-ped'),cur=sel.value;
+      sel.innerHTML=pedidos.map(p=>`<option value="${p.id}">${p.id} · ${p.nombre}</option>`).join('');
+      if(cur&&pedidos.find(p=>p.id===cur))sel.value=cur;
+      // Restaurar partida activa
+      if(ppOpActual){
+        const sel2=$('pp-op');
+        const ped=getPed(sel.value);
+        if(ped){
+          sel2.innerHTML=ped.ops.map(o=>`<option value="${o.id}">Partida ${o.num}${o.maquila?' [Maquila]':''}</option>`).join('');
+          const existe=[...sel2.options].some(o=>o.value===ppOpActual);
+          if(existe)sel2.value=ppOpActual;
+          else ppOpActual=sel2.value;
+        }
+      }
+      // Re-renderizar sin limpiar diseño en edición
+      ppActualizarMaquinas();
+      ppRenderPartidas(getPed($('pp-ped').value));
+      ppRenderCopiarBtn();ppRenderSaved();ppRender();ppRenderCob();
+      ppMaqRefresh();
+    }
+  }
   else if(n==='pro'){if(!proInicializado){proInicializado=true;proCargarPeds();}else proRefresh();}
   else if(n==='ops')renderOPs();
   else if(n==='ent'){renderPT();renderEntregas();}
@@ -1435,7 +1459,15 @@ function ppRefresh(){
   const sel=$('pp-ped'),cur=sel.value;
   sel.innerHTML=pedidos.map(p=>`<option value="${p.id}">${p.id} · ${p.nombre}</option>`).join('');
   if(cur&&pedidos.find(p=>p.id===cur))sel.value=cur;
+  // Preservar ppOpActual al refrescar — no resetear si sigue siendo válido
+  const opAnterior=ppOpActual;
   ppCargaPed();
+  // Restaurar partida activa si sigue existiendo
+  if(opAnterior){
+    const sel2=$('pp-op');
+    const existe=[...sel2.options].some(o=>o.value===opAnterior);
+    if(existe){sel2.value=opAnterior;ppOpActual=opAnterior;ppRenderSaved();ppRenderCob();}
+  }
 }
 function ppCargaPed(){
   ppActualizarMaquinas();
@@ -4124,9 +4156,10 @@ function sbIniciarPolling(){
       // Actualizar UI sin destruir estado activo
       renderPeds();renderOPs();renderPT();renderEntregas();
       if(proInicializado)proRefresh();
-      // Actualizar indicador
+      // Actualizar indicador de sync
       const el=document.getElementById('sb-ultimo-sync');
       if(el)el.textContent='↻ '+ahora();
+      console.log('Sync completado:',ahora(),'ops cerradas:',opsCerradas.length);
     }catch(e){console.error('Polling error:',e);}
   },30000);
 }
