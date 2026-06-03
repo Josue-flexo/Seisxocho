@@ -4051,9 +4051,77 @@ function ppUpdMaq(){
 // ════════════════════════════════════════════════════════
 let sbPollInterval=null;
 function sbIniciarPolling(){
-  // Polling desactivado temporalmente — el PATCH a Supabase necesita verificarse primero
-  // Se reactiva cuando confirmemos que los saves funcionan correctamente
   if(sbPollInterval)clearInterval(sbPollInterval);
+  sbPollInterval=setInterval(async()=>{
+    if(!sbActivo)return;
+    try{
+      // Solo cargar tablas que otros usuarios pueden modificar
+      // NO recargar diseños ni estado activo de preprensa/producción
+      const [rOps,rPed,rEnt,rPT]=await Promise.all([
+        sbReq('GET','ops_cerradas','','?select=*'),
+        sbReq('GET','pedidos','','?select=*&order=created_at'),
+        sbReq('GET','entregas','','?select=*&order=created_at'),
+        sbReq('GET','inventario_pt','','?select=*&order=created_at'),
+      ]);
+      // Actualizar ops cerradas — solo agregar nuevas, no borrar las existentes
+      if(rOps){
+        const nuevasOps=rOps.filter(o=>!opsCerradas.some(oc=>oc.opId===o.op_id));
+        if(nuevasOps.length){
+          nuevasOps.forEach(o=>opsCerradas.push({
+            opId:o.op_id,pedId:o.ped_id,mermaMicas:o.merma_micas,pzMalas:o.pz_malas,
+            consumo:o.consumo,plan:o.plan,pMic:o.p_mic,pPz:o.p_pz,
+            totalMerma:o.total_merma,efic:o.efic,tPro:o.t_pro,tMu:o.t_mu,
+            fecha:o.fecha,ts:o.ts
+          }));
+        }
+      }
+      // Actualizar pedidos — solo los que no estoy editando ahora
+      if(rPed){
+        rPed.forEach(p=>{
+          const idx=pedidos.findIndex(x=>x.id===p.id);
+          const pedActivo=opActual?.pedId===p.id || ppOpActual?.startsWith(p.id);
+          if(pedActivo)return; // No sobreescribir pedido activo
+          const mapped={
+            id:p.id,cliente:p.cliente,nombre:p.nombre,folio:p.folio,
+            fecha:p.fecha,statusManual:p.status_manual,fechaCreacion:p.fecha_creacion,
+            archivado:p.archivado,fechaArchivo:p.fecha_archivo,
+            lineas:p.lineas||[],ops:p.ops||[],cambios:p.cambios||[]
+          };
+          if(idx>=0)pedidos[idx]=mapped;
+          else pedidos.push(mapped);
+        });
+      }
+      // Actualizar entregas
+      if(rEnt){
+        rEnt.forEach(e=>{
+          const idx=entregas.findIndex(x=>x.id===e.id);
+          const mapped={
+            id:e.id,pedId:e.ped_id,opId:e.op_id,tiendas:e.tiendas||[],
+            metodo:e.metodo,guia:e.guia,fecha:e.fecha,totalPz:e.total_pz,
+            status:e.status,archivado:e.archivado,fechaEntregado:e.fecha_entregado
+          };
+          if(idx>=0)entregas[idx]=mapped;
+          else entregas.push(mapped);
+        });
+      }
+      // Actualizar inventario PT
+      if(rPT){
+        const ptMap={};
+        rPT.forEach(e=>{
+          const k=`${e.op_id}|${e.prod}|${e.tam||''}|${e.car}`;
+          if(!ptMap[k])ptMap[k]={prod:e.prod,tam:e.tam,car:e.car,pz:0,pedId:e.ped_id,opId:e.op_id,fecha:e.fecha};
+          ptMap[k].pz=Math.max(ptMap[k].pz,e.pz);
+        });
+        inventarioPT=Object.values(ptMap);
+      }
+      // Actualizar UI sin destruir estado activo
+      renderPeds();renderOPs();renderPT();renderEntregas();
+      if(proInicializado)proRefresh();
+      // Actualizar indicador
+      const el=document.getElementById('sb-ultimo-sync');
+      if(el)el.textContent='↻ '+ahora();
+    }catch(e){console.error('Polling error:',e);}
+  },30000);
 }
 
 // ════════════════════════════════════════════════════════
