@@ -2068,11 +2068,19 @@ function paroConfirmar(){
   cerrarModal('m-par');renderEsts();renderParos();
 }
 function estFinalizar(i){
+  // Candado: verificar que la estación anterior esté completada
+  if(i>0&&ests[i-1].status!=='completado'){
+    alert(`Debes finalizar "${ests[i-1].nombre}" antes de finalizar "${ests[i].nombre}"`);
+    return;
+  }
+  if(ests[i].status!=='corriendo'){
+    alert(`Debes iniciar "${ests[i].nombre}" antes de finalizarla`);
+    return;
+  }
   const trans=Math.floor((Date.now()-ests[i]._ts)/1000);
   ests[i].tiempoProductivo+=trans;ests[i].horaFin=ahora();ests[i].status='completado';ests[i]._ts=null;
   if(!ests.some(e=>e.status==='corriendo')&&tInt){clearInterval(tInt);tInt=null;}
   renderEsts();calcMerma();
-  // Si la estación que se finalizó es Calidad → mostrar opciones
   if(ests[i].nombre==='Calidad'){
     setTimeout(()=>{
       $('pro-resultado').innerHTML=`
@@ -2253,11 +2261,11 @@ function proCerrar(){
     const ped=getPed(opActual.pedId);
     const op=ped?.ops.find(o=>o.id===opActual.opId);
     if(op)op.status='cerrada';
-    // Calcular piezas buenas que entran a PT
-  // pzBuenas = totalFabricado - pzMalas(Corte)  [Calidad no genera merma propia]
+  }
+  // Calcular piezas buenas que entran a PT
   const tpzFab=opActual?getPzOP(opActual.opId):0;
-  const pc2=0; // Calidad no genera merma — solo libera
-  const pzPT2=Math.max(0,tpzFab-pm); // totalFabricado - pzMalas(Corte)
+  const pc2=0;
+  const pzPT2=Math.max(0,tpzFab-pm);
   // Registrar entrada a PT por producto/carácter
   if(pzPT2>0&&opActual){
     const dis=diseños[opActual.opId]||[];
@@ -2271,7 +2279,6 @@ function proCerrar(){
     });
   }
   opsCerradas.push({opId:opActual.opId,pedId:opActual.pedId,mermaMicas:mm,pzMalas:pm,pzRechazadas:pc2,pzPT:pzPT2,consumo,plan,pMic,pPz,totalMerma,efic,tPro,tMu,fecha:hoy(),ts:ahora()});
-  }
   // Mostrar resultado
   // Guardar antes del reset de ests y opActual
   const esMaqCierre=proEsOpMaquila();
