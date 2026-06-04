@@ -882,10 +882,22 @@ function abrirPedido(pedId){
       <button class="btn" style="flex:1" onclick="abrirCambio('${pedId}')">Cambio de Xavier</button>
     </div>
     ${cambiosH}
-    ${!ped.archivado?`<button class="btn bb" style="margin-top:8px;color:#888;border-color:#e5e7eb" onclick="archivarPed('${pedId}')">Archivar pedido</button>`:''}
+    ${!ped.archivado?`<button class="btn bb" style="margin-top:8px;color:#888;border-color:#e5e7eb" onclick="archivarPed('${pedId}')">Archivar pedido</button>`:''} 
+    <button class="btn bb" style="margin-top:8px;color:#dc2626;border-color:#fca5a5" onclick="eliminarPed('${pedId}')">Eliminar pedido</button>
   `;
 }
 function archivarPed(pedId){if(!confirm('¿Archivar?'))return;const p=getPed(pedId);if(p){p.archivado=true;p.fechaArchivo=hoy();sbActualizarPedido(p);}renderPeds();}
+function eliminarPed(pedId){
+  if(!confirm('¿Eliminar el pedido '+pedId+'? Esta acción no se puede deshacer.'))return;
+  // Eliminar de memoria
+  pedidos=pedidos.filter(p=>p.id!==pedId);
+  // Eliminar de Supabase
+  if(sbActivo){
+    sbReq('DELETE','pedidos',null,`?id=eq.${pedId}`);
+    sbReq('DELETE','disenos',null,`?ped_id=eq.${pedId}`);
+  }
+  renderPeds();renderOPs();
+}
 function abrirCambio(pedId){
   pedIdCambio=pedId;
   document.getElementById('cx-desc').value='';
