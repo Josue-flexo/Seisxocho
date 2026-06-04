@@ -4179,15 +4179,12 @@ function sbIniciarPolling(){
             });
           }
         });
-        // Si preprensa está activa y tiene la misma OP, actualizar diseños guardados
-        if(ppInicializado&&ppOpActual){
-          const elSaved=$('pp-saved');
-          if(elSaved)ppRenderSaved();
-        }
-        // Actualizar colores de partidas en preprensa
+        // Actualizar preprensa siempre que haya diseños nuevos
         if(ppInicializado){
+          ppRenderSaved();
           const ped=getPed($('pp-ped')?.value);
           if(ped)ppRenderPartidas(ped);
+          ppRenderCob();
         }
       }
       // Actualizar UI DESPUÉS de tener todos los datos actualizados
