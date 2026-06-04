@@ -129,7 +129,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .div{height:1px;background:#f0f0f0;margin:12px 0}
 /* OP dot */
 .opdot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
-.op-prog{background:#94a3b8}.op-ab{background:#f59e0b}.op-cerr{background:#22c55e}
+.op-prog{background:#94a3b8}.op-ab{background:#22c55e}.op-cerr{background:#15803d}
 @media print{.nav,.top,.brow,.btn,.mbg,button{display:none!important}.app{max-width:100%}.sc{display:flex!important}}
 </style>
 </head>
@@ -289,8 +289,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <div class="sc" id="sc-ops">
   <div class="sb">
     <div class="kg3">
-      <div class="kpi"><div class="kl">Programadas</div><div class="kv" id="ops-prog">0</div></div>
-      <div class="kpi"><div class="kl">Abiertas</div><div class="kv" id="ops-ab">0</div></div>
+      <div class="kpi"><div class="kl">Sin diseños</div><div class="kv" id="ops-prog">0</div></div>
+      <div class="kpi"><div class="kl">Con diseños</div><div class="kv" id="ops-ab">0</div></div>
       <div class="kpi"><div class="kl">Cerradas</div><div class="kv" id="ops-cerr">0</div></div>
     </div>
     <div class="segs" id="sf-ops">
@@ -2471,7 +2471,7 @@ function renderOPs(){
         <div class="opdot ${dc}"></div>
         <div style="flex:1"><div style="font-weight:600;font-size:13px">${o.id}</div>
           <div style="font-size:11px;color:#888">${o.ped.cliente} · ${o.ped.nombre} · Partida ${o.num}</div></div>
-        <span class="bdg ${bc}">${est==='programada'?'Programada':est==='abierta'?'Abierta':'Cerrada'}</span>
+        <span class="bdg ${bc}">${est==='programada'?'Sin diseños':est==='abierta'?'Con diseños':'Cerrada'}</span>
       </div>
       <div style="font-size:11px;color:#666">${dis.length?`${dis.length} diseño${dis.length!==1?'s':''} · ${mqs.join(', ')} · ${getMicasOP(o.id)} micas`:'Sin diseños'}</div>
       ${cerr?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid #eee;font-size:11px;color:#666;display:flex;gap:12px"><span>Merma: ${cerr.totalMerma}%</span><span>Efic: ${cerr.efic}%</span><span>${cerr.fecha} ${cerr.ts}</span></div>`:''}
@@ -4184,14 +4184,21 @@ function sbIniciarPolling(){
           const elSaved=$('pp-saved');
           if(elSaved)ppRenderSaved();
         }
+        // Actualizar colores de partidas en preprensa
+        if(ppInicializado){
+          const ped=getPed($('pp-ped')?.value);
+          if(ped)ppRenderPartidas(ped);
+        }
       }
-      // Actualizar UI sin destruir estado activo
-      renderPeds();renderOPs();renderPT();renderEntregas();
+      // Actualizar UI DESPUÉS de tener todos los datos actualizados
+      renderPeds();
+      renderOPs();
+      renderPT();
+      renderEntregas();
       if(proInicializado)proRefresh();
       // Actualizar indicador de sync
       const el=document.getElementById('sb-ultimo-sync');
       if(el)el.textContent='↻ '+ahora();
-      console.log('Sync completado:',ahora(),'ops cerradas:',opsCerradas.length);
     }catch(e){console.error('Polling error:',e);}
   },30000);
 }
