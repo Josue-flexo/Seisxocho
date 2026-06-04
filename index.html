@@ -479,15 +479,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     </div>
     <div class="fld"><label>Tiendas del cliente (una por línea)</label>
       <textarea id="np-tiendas" rows="3" placeholder="Ej:&#10;Destino A: Polanco, Toreo, Santa Fe&#10;Destino B: Monterrey, Guadalajara" style="width:100%;font-size:12px"></textarea>
-      <div style="font-size:11px;color:#888;margin-top:4px">O importa desde el Excel de Xavier ↓</div>
-    </div>
-    <!-- Importar Excel -->
-    <div style="background:#f0f4ff;border:1px solid #c7d7f8;border-radius:10px;padding:12px;margin-bottom:10px">
-      <div style="font-size:13px;font-weight:600;color:#1a1a2e;margin-bottom:6px">📥 Importar desde Excel de Xavier</div>
-      <div style="font-size:11px;color:#555;margin-bottom:10px">La IA lee cualquier formato de Excel — no importa si es de Liverpool, Adidas u otro cliente. Detecta números, letras, kits y destinos automáticamente.</div>
-      <input type="file" id="np-xlsx" accept=".xlsx" style="display:none" onchange="npImportarXlsx(this)">
-      <button class="btn bs bb" onclick="document.getElementById('np-xlsx').click()">↑ Seleccionar archivo Excel</button>
-      <div id="np-xlsx-status" style="font-size:12px;margin-top:8px;min-height:20px"></div>
     </div>
     <div class="stit">Productos solicitados</div>
     <div id="np-lineas"></div>
@@ -1069,7 +1060,6 @@ function npGuardar(){
   $('np-nom').value='';$('np-fol').value='';
   if($('np-kit'))$('np-kit').value='ninguno';
   if($('np-tiendas'))$('np-tiendas').value='';
-  if($('np-xlsx-status'))$('np-xlsx-status').textContent='';
   ['np-fec-d','np-fec-m','np-fec-y'].forEach(id=>{const e=document.getElementById(id);if(e)e.selectedIndex=0;});
   $('np-lineas').innerHTML='';npLineas=[];
   renderPeds();
@@ -2654,20 +2644,6 @@ function renderExportar(){
 // ════════════════════════════════════════════════════════
 // IMPORTAR EXCEL DE XAVIER
 // ════════════════════════════════════════════════════════
-function npImportarXlsx(input){
-  const file=input.files[0];if(!file)return;
-  const status=document.getElementById('np-xlsx-status');
-  status.textContent='Leyendo archivo...';status.style.color='#1d4ed8';
-  if(!window.XLSX){
-    const s=document.createElement('script');
-    s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-    s.onload=()=>npProcesarExcel(file,status);
-    s.onerror=()=>{status.textContent='Error cargando librería';status.style.color='#dc2626';};
-    document.head.appendChild(s);
-  } else {
-    npProcesarExcel(file,status);
-  }
-}
 
 function npProcesarExcel(file,status){
   const tipoKit=$('np-kit')?.value||'ninguno';
@@ -2778,156 +2754,8 @@ function npProcesarExcel(file,status){
   reader.readAsArrayBuffer(file);
 }
 
-function npParsearJsonManual(){
-  const txt=(document.getElementById('np-json-manual')?.value||'').trim();
-  const status=document.getElementById('np-xlsx-status');
-  try{
-    const jsonMatch=txt.match(/\{[\s\S]*\}/);
-    if(!jsonMatch)throw new Error('No se encontró JSON');
-    const resultado=JSON.parse(jsonMatch[0]);
-    if(!resultado.lineas?.length)throw new Error('El JSON no tiene líneas');
-    npPoblarLineas(resultado,status);
-  }catch(e){
-    status.textContent='Error al leer el JSON: '+e.message;
-    status.style.color='#dc2626';
-  }
-}
 
-function npPoblarLineas(resultado,status){
-  $('np-lineas').innerHTML='';npLineas=[];
-  const mapa={};
-  resultado.lineas.forEach(l=>{
-    const k=`${l.prod}|${l.tam}|${l.car}`;
-    if(!mapa[k])mapa[k]={...l,cant:0};
-    mapa[k].cant+=Math.round(l.cant);
-  });
-  const lineasFinal=Object.values(mapa).filter(l=>l.cant>0)
-    .sort((a,b)=>a.prod.localeCompare(b.prod)||String(a.car).localeCompare(String(b.car)));
-  lineasFinal.forEach(l=>{
-    const uid=Date.now()+Math.random();
-    npLineas.push(uid);
-    const div=document.createElement('div');div.className='fcard';div.id='nl-'+uid;
-    div.style.cssText='border-left:3px solid #15803d';
-    div.innerHTML=`
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-        <div>
-          <span style="font-size:12px;font-weight:600;color:#1a1a2e">${l.prod}</span>
-          <span style="font-size:11px;color:#888"> (${l.tam})</span>
-          <span style="font-size:13px;font-weight:700;color:#1a1a2e"> ${l.car}</span>
-        </div>
-        <button onclick="npRemLinea(${uid})" style="font-size:11px;color:#b91c1c;background:none;border:none;cursor:pointer;flex-shrink:0">× Quitar</button>
-      </div>
-      <div style="display:flex;align-items:center;gap:8px">
-        <span style="font-size:12px;color:#555">Cantidad:</span>
-        <input type="number" id="nlq-${uid}" value="${l.cant}"
-          style="width:120px;padding:7px;border:1px solid #ddd;border-radius:6px;font-size:15px;font-weight:700;text-align:center;outline:none">
-      </div>
-      <input type="hidden" id="nlp-${uid}" value="${l.prod}">
-      <input type="hidden" id="nlt-${uid}" value="${l.tam}">
-      <input type="hidden" id="nlc-${uid}" value="${l.car}">
-      <input type="hidden" id="nlmod-${uid}" value="N/A">
-      <input type="hidden" id="nltek-${uid}" value="Transfer">`;
-    $('np-lineas').appendChild(div);
-  });
-  if(resultado.destinos?.length&&$('np-tiendas')){
-    $('np-tiendas').value=resultado.destinos.join('\n');
-  }
-  status.innerHTML=`✓ ${lineasFinal.length} líneas cargadas${resultado.notas?'<br><span style="color:#888">'+resultado.notas+'</span>':''}`;
-  status.style.color='#15803d';
-}
 
-async function npLeerYEnviarAIA(file,status){
-  const tipoKit=$('np-kit')?.value||'ninguno';
-  try{
-    // Leer Excel y convertir a texto estructurado
-    const buf=await file.arrayBuffer();
-    const wb=XLSX.read(buf,{type:'array'});
-    let resumenExcel='';
-    wb.SheetNames.forEach(nombre=>{
-      const ws=wb.Sheets[nombre];
-      const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:true});
-      // Enviar solo las primeras 20 filas de cada hoja para no saturar el contexto
-      const preview=rows.slice(0,20).map((r,i)=>
-        `F${i+1}: ${r.slice(0,30).map(c=>c===''?'—':String(c).substring(0,15)).join(' | ')}`
-      ).join('\n');
-      resumenExcel+=`\n## HOJA: ${nombre}\n${preview}\n`;
-    });
-
-    status.textContent='Interpretando con IA...';status.style.color='#1d4ed8';
-
-    const tipoKitDesc=tipoKit==='seleccion'?'Selección (Nombre+Dorsal+Frontal)':
-                      tipoKit==='local'?'Local (Nombre+Dorsal)':'Sin kits';
-
-    const prompt=`Eres un experto en producción de serigrafía y transfer. Analiza este Excel de pedido de un cliente y extrae las líneas de productos a fabricar.
-
-CONTEXTO DEL NEGOCIO:
-- Productos posibles: "Numero Dorsal", "Numero Frontal", "Nombre Chico", "Nombre Grande", "Letra", "Etiqueta", "Plotter"
-- Tamaños para Numero Dorsal: "Adulto", "Dama", "Niño"
-- Tamaños para otros productos: "Estándar"
-- Caracteres: dígitos 0-9 para números, letras A-Z/Ñ para letras, nombres de jugadores para Nombre Chico/Grande
-- Tipo de kit configurado: ${tipoKitDesc}
-- IMPORTANTE: Los kits de jugadores (ej. RAUL9, S.JIMENEZ11) deben descomponerse así:
-  * RAUL9 → Nombre Chico "RAUL" + Numero Dorsal Adulto "9" ${tipoKit==='seleccion'?'+ Numero Frontal Estándar "9"':''}
-  * S.JIMENEZ11 → Nombre Grande "S.JIMENEZ" + Numero Dorsal Adulto "1" × 2 (el 11 son dos "1") ${tipoKit==='seleccion'?'+ Numero Frontal Estándar "1" × 2':''}
-  * Para números de 2 dígitos: cada dígito es una pieza separada
-- Las cantidades son TOTALES del pedido (suma de todos los destinos/tiendas)
-- Si hay múltiples destinos o grupos (A,B,C,D o nombres de tiendas), suma todos
-- Redondea las cantidades al entero más cercano
-- Ignora filas con cantidades 0 o vacías
-
-ESTRUCTURA DEL EXCEL:
-${resumenExcel}
-
-Responde SOLO con un JSON válido, sin texto adicional, con esta estructura exacta:
-{
-  "lineas": [
-    {"prod": "Numero Dorsal", "tam": "Adulto", "car": "9", "cant": 6270},
-    {"prod": "Nombre Chico", "tam": "Estándar", "car": "RAUL", "cant": 6270}
-  ],
-  "destinos": ["Polanco", "Toreo", "Santa Fe"],
-  "notas": "breve explicación de lo que encontraste"
-}`;
-
-    let resp;
-    try{
-      resp=await fetch('https://api.anthropic.com/v1/messages',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({
-          model:'claude-sonnet-4-20250514',
-          max_tokens:4000,
-          messages:[{role:'user',content:prompt}]
-        })
-      });
-    }catch(fetchErr){
-      // CORS o red — copiar prompt al portapapeles para usar manualmente
-      await navigator.clipboard.writeText(prompt).catch(()=>{});
-      status.innerHTML=`⚠ La IA no puede conectarse directamente desde el navegador.<br>
-        <span style="color:#555">El prompt se copió al portapapeles. Pégalo en Claude.ai, copia el JSON que te devuelva y pégalo aquí:</span><br>
-        <textarea id="np-json-manual" rows="4" placeholder='Pega aquí el JSON de Claude...' style="width:100%;margin-top:6px;font-size:11px;padding:6px;border:1px solid #ddd;border-radius:6px"></textarea>
-        <button class="btn bp" style="width:100%;margin-top:6px;font-size:12px" onclick="npParsearJsonManual()">Cargar JSON</button>`;
-      status.style.color='#d97706';
-      return;
-    }
-
-    if(!resp.ok)throw new Error('Error API: '+resp.status);
-    const data=await resp.json();
-    const texto=data.content?.[0]?.text||'';
-
-    // Parsear JSON de la respuesta
-    const jsonMatch=texto.match(/\{[\s\S]*\}/);
-    if(!jsonMatch)throw new Error('La IA no devolvió JSON válido');
-    const resultado=JSON.parse(jsonMatch[0]);
-
-    if(!resultado.lineas?.length)throw new Error('No se encontraron productos en el archivo');
-    npPoblarLineas(resultado,status);
-
-  }catch(err){
-    console.error(err);
-    status.textContent='Error: '+err.message+'. Puedes agregar los productos manualmente.';
-    status.style.color='#dc2626';
-  }
-}
 
 
 function exportXLSX(tipo){
