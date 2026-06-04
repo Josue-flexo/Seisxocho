@@ -937,6 +937,11 @@ function cxAddLinea(){
     <div class="fr" style="margin-top:8px">
       <div class="fld" style="margin:0"><label>Carácter</label><input type="text" id="cxc-${id}" placeholder="Ej: 0-9" style="width:100%"></div>
       <div class="fld" style="margin:0"><label>Cantidad</label><input type="number" inputmode="numeric" id="cxq-${id}" placeholder="0" style="width:100%"></div></div>
+    <div class="fr" style="margin-top:8px">
+      <div class="fld" style="margin:0"><label>Modelo</label>
+        <select id="cxmod-${id}" style="width:100%">${MODELOS.map(m=>`<option>${m}</option>`).join('')}</select></div>
+      <div class="fld" style="margin:0"><label>Técnica</label>
+        <select id="cxtek-${id}" style="width:100%">${TECNICAS.map(t=>`<option>${t}</option>`).join('')}</select></div></div>
     <button onclick="cxRemLinea(${id})" style="font-size:11px;color:#b91c1c;background:none;border:none;cursor:pointer;margin-top:6px">× Eliminar</button>`;
   document.getElementById('cx-lineas').appendChild(div);
 }
@@ -966,14 +971,16 @@ function cxGuardar(){
       const tam=document.getElementById('cxt-'+id)?.value;
       const car=(document.getElementById('cxc-'+id)?.value||'').trim();
       const cant=parseInt(document.getElementById('cxq-'+id)?.value)||0;
+      const modelo=document.getElementById('cxmod-'+id)?.value||'N/A';
+      const tek=document.getElementById('cxtek-'+id)?.value||'Transfer';
       if(!SIN_CAR().includes(prod)&&!car){alert('Ingresa el carácter para '+prod);return;}
       if(!cant){alert('Ingresa la cantidad');return;}
       const carF=SIN_CAR().includes(prod)?(car||'N/A'):car;
       if(!SIN_CAR().includes(prod)){
         const v=validarCar(prod,carF);if(!v.ok){alert(v.msg);return;}
         const ex=expandir(carF,cant);if(!ex.ok){alert(ex.msg);return;}
-        ex.lines.forEach(l=>{ped.lineas.push({prod,tam,car:l.car,cant:l.cant});lineasNuevas.push({prod,tam,car:l.car,cant:l.cant});});
-      }else{ped.lineas.push({prod,tam,car:carF,cant,tecnica:tek,empresa:empresaActiva});lineasNuevas.push({prod,tam,car:carF,cant});}
+        ex.lines.forEach(l=>{ped.lineas.push({prod,tam,car:l.car,cant:l.cant,modelo,tecnica:tek});lineasNuevas.push({prod,tam,car:l.car,cant:l.cant,modelo,tecnica:tek});});
+      }else{ped.lineas.push({prod,tam,car:carF,cant,modelo,tecnica:tek,empresa:empresaActiva});lineasNuevas.push({prod,tam,car:carF,cant,modelo,tecnica:tek});}
     }
   }
   if(!ped.cambios)ped.cambios=[];
