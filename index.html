@@ -483,6 +483,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div class="stit">Productos solicitados</div>
     <div id="np-lineas"></div>
     <button class="btn bb" style="margin-bottom:10px" onclick="npAddLinea()">+ Agregar producto manualmente</button>
+    <div id="np-precios-box" style="display:none;margin-bottom:12px">
+      <div class="stit" style="margin-bottom:6px">Precio por producto <span style="font-size:11px;font-weight:400;color:#888">(para facturar — no se muestra después de guardar)</span></div>
+      <div id="np-precios"></div>
+    </div>
     <div class="mbtns">
       <button class="btn" style="flex:1" onclick="cerrarModal('m-ped')">Cancelar</button>
       <button class="btn bp" style="flex:1" onclick="npGuardar()">Guardar pedido</button>
@@ -1011,7 +1015,7 @@ function npAddLinea(){
   const firstTam=prods.length?TAM()[prods[0]]:[];
   const div=document.createElement('div');div.className='fcard';div.id='nl-'+id;
   div.innerHTML=`<div class="fr"><div class="fld" style="margin:0"><label>Producto</label>
-    <select id="nlp-${id}" onchange="npUpdT(${id})" style="width:100%">${prods.map(p=>`<option>${p}</option>`).join('')}</select></div>
+    <select id="nlp-${id}" onchange="npUpdT(${id});npUpdPrecios()" style="width:100%">${prods.map(p=>`<option>${p}</option>`).join('')}</select></div>
     <div class="fld" style="margin:0"><label>Tamaño</label>
     <select id="nlt-${id}" style="width:100%">${firstTam.map(t=>`<option>${t}</option>`).join('')}</select></div></div>
     <div class="fr" style="margin-top:8px">
@@ -1031,6 +1035,7 @@ function npAddLinea(){
     <button onclick="npRemLinea(${id})" style="font-size:11px;color:#b91c1c;background:none;border:none;cursor:pointer;margin-top:6px">× Eliminar</button>`;
   $('np-lineas').appendChild(div);
   npUpdT(id);
+  npUpdPrecios();
 }
 function npUpdT(id){
   const p=document.getElementById('nlp-'+id)?.value;if(!p)return;
@@ -1043,7 +1048,24 @@ function npUpdT(id){
   if(lbl)lbl.textContent=empresaActiva==='papelito'?'Color':sc?'Descripción (opcional)':'Carácter(es)*';
   if(inp&&empresaActiva!=='papelito')inp.placeholder=sc?'Ej: Logo empresa':'Ej: 0-9, A-Z';
 }
-function npRemLinea(id){npLineas=npLineas.filter(x=>x!==id);$('nl-'+id)?.remove();}
+function npRemLinea(id){npLineas=npLineas.filter(x=>x!==id);$('nl-'+id)?.remove();npUpdPrecios();}
+function npUpdPrecios(){
+  const box=$('np-precios-box'),cont=$('np-precios');
+  if(!box||!cont)return;
+  const prods=[...new Set(npLineas.map(id=>document.getElementById('nlp-'+id)?.value).filter(Boolean))];
+  if(!prods.length){box.style.display='none';return;}
+  box.style.display='block';
+  const vals={};
+  cont.querySelectorAll('input[data-prod]').forEach(inp=>{if(inp.value)vals[inp.dataset.prod]=inp.value;});
+  cont.innerHTML=prods.map(p=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+    <span style="font-size:12px;flex:1">${p}</span>
+    <input type="number" data-prod="${p}" placeholder="$ / pz" step="0.01" min="0"
+      style="width:100px;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:12px"
+      value="${vals[p]||''}">
+    <button onclick="this.previousElementSibling.value=''"
+      style="background:none;border:none;color:#b91c1c;cursor:pointer;font-size:16px;padding:0 4px;line-height:1" title="Borrar precio">×</button>
+  </div>`).join('');
+}
 function npGuardar(){
   const cli=$('np-cli').value,nom=$('np-nom').value.trim(),fol=$('np-fol').value.trim();
   const fd=document.getElementById('np-fec-d')?.value,fm=document.getElementById('np-fec-m')?.value,fy=document.getElementById('np-fec-y')?.value;
@@ -1074,13 +1096,20 @@ function npGuardar(){
   }
   const m=new Date().getMonth()+1,y=String(new Date().getFullYear()).slice(2);
   const newId=`PED-${y}${String(m).padStart(2,'0')}-${String(pedidos.length+1).padStart(3,'0')}`;
-  pedidos.push({id:newId,cliente:cli,nombre:nom,folio:fol,fecha:fec,statusManual:pri,fechaCreacion:hoy(),archivado:false,tipoKit,tiendasPedido,lineas,ops:[{id:newId+'-OP1',num:1,status:'pendiente'}],cambios:[]});
+  const precios={};
+  document.querySelectorAll('#np-precios input[data-prod]').forEach(inp=>{
+    const v=parseFloat(inp.value);
+    if(!isNaN(v)&&v>0)precios[inp.dataset.prod]=v;
+  });
+  pedidos.push({id:newId,cliente:cli,nombre:nom,folio:fol,fecha:fec,statusManual:pri,fechaCreacion:hoy(),archivado:false,tipoKit,tiendasPedido,lineas,precios,ops:[{id:newId+'-OP1',num:1,status:'pendiente'}],cambios:[]});
   cerrarModal('m-ped');
   $('np-nom').value='';$('np-fol').value='';
   if($('np-kit'))$('np-kit').value='ninguno';
   if($('np-tiendas'))$('np-tiendas').value='';
   ['np-fec-d','np-fec-m','np-fec-y'].forEach(id=>{const e=document.getElementById(id);if(e)e.selectedIndex=0;});
   $('np-lineas').innerHTML='';npLineas=[];
+  if($('np-precios'))$('np-precios').innerHTML='';
+  if($('np-precios-box'))$('np-precios-box').style.display='none';
   renderPeds();
   if(ppInicializado)ppRefresh();
   if(proInicializado)proRefresh();
@@ -2805,6 +2834,13 @@ function exportXLSX(tipo){
       ['ID','Folio','Cliente','Nombre','Fecha','Status','Empresa','Total pz','OPs','Cambios'],
       pedidos.map(p=>[p.id,p.folio||'',p.cliente,p.nombre,p.fecha,estadoPed(p),p.empresa||'seisxocho',p.lineas.reduce((s,l)=>s+l.cant,0),p.ops.length,(p.cambios||[]).length])
     );
+    const precRows=[];
+    pedidos.filter(p=>!p.archivado&&p.precios&&Object.keys(p.precios).length).forEach(p=>{
+      Object.entries(p.precios).forEach(([prod,precio])=>{
+        precRows.push([p.id,p.folio||'',p.cliente,p.nombre,p.fecha,prod,precio]);
+      });
+    });
+    if(precRows.length)addSheet('Precios para Facturar',['Pedido_ID','Folio','Cliente','Pedido','Fecha','Producto','Precio_Unitario'],precRows);
   }
   if(tipo==='ops'||tipo==='todo'){
     const rows=[];
