@@ -470,16 +470,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div class="fld"><label>Prioridad</label>
       <select id="np-pri" style="width:100%"><option value="proceso">En proceso</option><option value="urgente">Urgente</option></select>
     </div>
-    <div class="fld"><label>Tipo de kit (si aplica)</label>
-      <select id="np-kit" style="width:100%">
-        <option value="ninguno">Sin kits</option>
-        <option value="seleccion">Selección — Nombre + Dorsal + Frontal</option>
-        <option value="local">Local — Nombre + Dorsal</option>
-      </select>
-    </div>
-    <div class="fld"><label>Tiendas del cliente (una por línea)</label>
-      <textarea id="np-tiendas" rows="3" placeholder="Ej:&#10;Destino A: Polanco, Toreo, Santa Fe&#10;Destino B: Monterrey, Guadalajara" style="width:100%;font-size:12px"></textarea>
-    </div>
     <div class="stit">Productos solicitados</div>
     <div id="np-lineas"></div>
     <button class="btn bb" style="margin-bottom:10px" onclick="npAddLinea()">+ Agregar producto manualmente</button>
@@ -1070,11 +1060,7 @@ function npGuardar(){
   const cli=$('np-cli').value,nom=$('np-nom').value.trim(),fol=$('np-fol').value.trim();
   const fd=document.getElementById('np-fec-d')?.value,fm=document.getElementById('np-fec-m')?.value,fy=document.getElementById('np-fec-y')?.value;
   const fec=(fd&&fm&&fy)?fy+'-'+fm+'-'+fd:'';
-  const pri=$('np-pri').value;
-  const tipoKit=$('np-kit')?.value||'ninguno';
-  // Parsear tiendas del campo de texto
-  const tiendasRaw=($('np-tiendas')?.value||'').trim();
-  const tiendasPedido=tiendasRaw?tiendasRaw.split('\n').filter(Boolean).map(l=>l.trim()):[]; 
+  const pri=$('np-pri').value; 
   if(!nom){alert('Ingresa el nombre del pedido');return;}
   if(!fec){alert('Ingresa la fecha límite');return;}
   if(!npLineas.length){alert('Agrega al menos un producto');return;}
@@ -1101,11 +1087,11 @@ function npGuardar(){
     const v=parseFloat(inp.value);
     if(!isNaN(v)&&v>0)precios[inp.dataset.prod]=v;
   });
-  pedidos.push({id:newId,cliente:cli,nombre:nom,folio:fol,fecha:fec,statusManual:pri,fechaCreacion:hoy(),archivado:false,tipoKit,tiendasPedido,lineas,precios,ops:[{id:newId+'-OP1',num:1,status:'pendiente'}],cambios:[]});
+  pedidos.push({id:newId,cliente:cli,nombre:nom,folio:fol,fecha:fec,statusManual:pri,fechaCreacion:hoy(),archivado:false,lineas,precios,ops:[{id:newId+'-OP1',num:1,status:'pendiente'}],cambios:[]});
   cerrarModal('m-ped');
   $('np-nom').value='';$('np-fol').value='';
-  if($('np-kit'))$('np-kit').value='ninguno';
-  if($('np-tiendas'))$('np-tiendas').value='';
+  if($('np-precios'))$('np-precios').innerHTML='';
+  if($('np-precios-box'))$('np-precios-box').style.display='none';
   ['np-fec-d','np-fec-m','np-fec-y'].forEach(id=>{const e=document.getElementById(id);if(e)e.selectedIndex=0;});
   $('np-lineas').innerHTML='';npLineas=[];
   if($('np-precios'))$('np-precios').innerHTML='';
@@ -2694,8 +2680,7 @@ function renderExportar(){
 // ════════════════════════════════════════════════════════
 
 function npProcesarExcel(file,status){
-  const tipoKit=$('np-kit')?.value||'ninguno';
-  const esSeleccion=tipoKit==='seleccion';
+  const esSeleccion=false;
   const reader=new FileReader();
   reader.onload=function(e){
     try{
