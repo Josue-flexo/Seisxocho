@@ -1759,12 +1759,11 @@ function ppEliminarDiseno(opId,idx){
   if(!diseños[opId]||!diseños[opId][idx]){alert('Diseño no encontrado');return;}
   diseños[opId].splice(idx,1);
   diseños[opId].forEach((d,i)=>d.id=`D${String(i+1).padStart(2,'0')}`);
-  // Re-sincronizar todos los diseños de la OP en Supabase
   sbEliminarDisenos(opId).then(()=>{
     (diseños[opId]||[]).forEach(d=>sbGuardarDiseno(opId,d));
-  });
+  }).catch(e=>console.error('Error eliminando diseño:',e));
   ppRenderSaved();ppRenderCob();
-  const ped=getPed($('pp-ped').value);if(ped)ppRenderPartidas(ped);
+  const ped=getPed($('pp-ped')?.value);if(ped)ppRenderPartidas(ped);
   if(opActual?.opId===opId)proActInfo();
   renderOPs();
 }
@@ -1823,7 +1822,7 @@ function ppRenderCob(){
       d.registros.forEach(r=>{
         // Para SIN_CAR: key sin carácter para poder matchear independiente del car guardado
         const sinCar=SIN_CAR().includes(r.prod);
-        const k=sinCar?(r.prod+'|'+(r.tam||'')):(r.prod+'|'+(r.tam||'')+'|'+r.car);
+        const k=sinCar?(r.prod+'|'+(r.tam||'')+'|'+(d.modelo||'N/A')):(r.prod+'|'+(r.tam||'')+'|'+r.car+'|'+(d.modelo||'N/A'));
         const pz=d.esMaquila?r.pzm:r.pzm*d.micas;
         ppMap[k]=(ppMap[k]||0)+pz;
       });
@@ -1838,9 +1837,10 @@ function ppRenderCob(){
     const opActiva=ped.ops.find(o=>o.id===opId);
     if(opActiva&&!opActiva.maquila){
       const m=parseInt(document.getElementById('pp-minp')?.value)||ppM||1;
+      const modActivo=$('pp-mod')?.value||'N/A';
       ppR.forEach(r=>{
         const sinCar=SIN_CAR().includes(r.prod);
-        const k=sinCar?(r.prod+'|'+(r.tam||'')):(r.prod+'|'+(r.tam||'')+'|'+r.car);
+        const k=sinCar?(r.prod+'|'+(r.tam||'')+'|'+modActivo):(r.prod+'|'+(r.tam||'')+'|'+r.car+'|'+modActivo);
         ppMap[k]=(ppMap[k]||0)+r.pzm*m;
       });
     }
@@ -1848,17 +1848,18 @@ function ppRenderCob(){
   if(ppMaqR.length&&opActivaEsMaq){
     ppMaqR.forEach(r=>{
       const sinCar=SIN_CAR().includes(r.prod);
-      const k=sinCar?(r.prod+'|'+(r.tam||'')):(r.prod+'|'+(r.tam||'')+'|'+r.car);
+      const k=sinCar?(r.prod+'|'+(r.tam||'')+'|'+(r.modelo||'N/A')):(r.prod+'|'+(r.tam||'')+'|'+r.car+'|'+(r.modelo||'N/A'));
       ppMap[k]=(ppMap[k]||0)+r.pzm;
     });
   }
   const filas=lineas.map(l=>{
     const sinCar=SIN_CAR().includes(l.prod);
-    const k=sinCar?(l.prod+'|'+(l.tam||'')):(l.prod+'|'+(l.tam||'')+'|'+l.car);
+    const k=sinCar?(l.prod+'|'+(l.tam||'')+'|'+(l.modelo||'N/A')):(l.prod+'|'+(l.tam||'')+'|'+l.car+'|'+(l.modelo||'N/A'));
     const tiene=ppMap[k]||0;
     const pct=l.cant>0?Math.round(tiene/l.cant*100):0;
     const sem=pct>=100?'🟢':pct>=80?'🟡':'🔴';
-    return`<div class="tr" style="grid-template-columns:2fr 1fr 1fr 1fr 1fr"><span style="font-size:11px">${l.prod.replace('Numero ','Num.')}<br><span style="color:#999">${l.tam}</span></span><span style="font-weight:700">${sinCar?'—':l.car}</span><span>${l.cant.toLocaleString()}</span><span>${tiene.toLocaleString()}</span><span>${sem} ${pct}%</span></div>`;
+    const modTag=l.modelo&&l.modelo!=='N/A'?` <b style="color:#1d4ed8;font-size:10px">${l.modelo}</b>`:'';
+    return`<div class="tr" style="grid-template-columns:2fr 1fr 1fr 1fr 1fr"><span style="font-size:11px">${l.prod.replace('Numero ','Num.')}${modTag}<br><span style="color:#999">${l.tam}</span></span><span style="font-weight:700">${sinCar?'—':l.car}</span><span>${l.cant.toLocaleString()}</span><span>${tiene.toLocaleString()}</span><span>${sem} ${pct}%</span></div>`;
   }).join('');
   el.innerHTML=`<div class="tbl"><div class="th" style="grid-template-columns:2fr 1fr 1fr 1fr 1fr"><span>Producto</span><span>Cár.</span><span>Pedido</span><span>Plan.</span><span>Cob.</span></div>${filas}</div>`;
 }
