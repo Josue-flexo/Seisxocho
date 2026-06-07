@@ -3966,8 +3966,9 @@ function ppCheckModelo(){
   if(!warn)return;
   const mod=$('pp-mod')?.value;
   if(!mod||mod==='N/A'){warn.style.display='none';return;}
-  if(!ppOpActual){warn.style.display='none';return;}
-  const ped=pedidos.find(p=>p.ops.some(o=>o.id===ppOpActual));
+  const opId=ppOpActual||$('pp-op')?.value;
+  if(!opId){warn.style.display='none';return;}
+  const ped=pedidos.find(p=>p.ops.some(o=>o.id===opId));
   if(!ped||!ped.lineas?.length){warn.style.display='none';return;}
   const modelosPed=[...new Set(ped.lineas.map(l=>l.modelo).filter(m=>m&&m!=='N/A'))];
   if(!modelosPed.length){warn.style.display='none';return;}
