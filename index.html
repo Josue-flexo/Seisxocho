@@ -1496,7 +1496,7 @@ function renderEntregas(){
 
 function entArchivar(entId){
   const e=entregas.find(x=>x.id===entId);
-  if(e){e.archivado=true;renderEntregas();}
+  if(e){e.archivado=true;sbActualizarEntrega(e);renderEntregas();}
 }
 
 // ════════════════════════════════════════════════════════
@@ -1650,7 +1650,9 @@ function ppCopiarDiseno(){
   if(ppR.length&&!confirm('¿Reemplazar diseño actual?'))return;
   ppR=[...d.registros.map(r=>({...r,id:Date.now()+Math.random()}))];
   ppM=d.micas;$('pp-mval').textContent=ppM;$('pp-minp').value=ppM;
-  $('pp-maq').value=d.maquina;ppRender();
+  $('pp-maq').value=d.maquina;
+  if($('pp-mod')&&d.modelo&&d.modelo!=='N/A')$('pp-mod').value=d.modelo;
+  ppCheckModelo();ppRender();
 }
 function ppMicas(d){ppM=Math.max(1,ppM+d);$('pp-mval').textContent=ppM;$('pp-minp').value=ppM;ppRender();}
 function ppMicasInput(v){ppM=Math.max(1,parseInt(v)||1);$('pp-mval').textContent=ppM;ppRender();}
@@ -2368,6 +2370,19 @@ function proCerrar(){
       }));
       ptEntrada(opActual.opId,opActual.pedId,regsConMicas,pm);
     });
+    // Guardar PT en Supabase: DELETE + INSERT (evita necesitar unique constraint)
+    if(sbActivo){
+      const opIdPT=opActual.opId,pedIdPT=opActual.pedId;
+      sbReq('DELETE','inventario_pt',null,`?op_id=eq.${opIdPT}`).then(()=>{
+        const ptForOp=inventarioPT.filter(e=>e.opId===opIdPT);
+        if(ptForOp.length){
+          sbReq('POST','inventario_pt',ptForOp.map(e=>({
+            prod:e.prod,tam:e.tam,car:e.car,pz:e.pz,
+            ped_id:e.pedId,op_id:e.opId,fecha:e.fecha
+          })));
+        }
+      });
+    }
   }
   opsCerradas.push({opId:opActual.opId,pedId:opActual.pedId,mermaMicas:mm,pzMalas:pm,pzRechazadas:pc2,pzPT:pzPT2,consumo,plan,pMic,pPz,totalMerma,efic,tPro,tMu,fecha:hoy(),ts:ahora()});
   // Mostrar resultado
@@ -2442,16 +2457,10 @@ function proCerrar(){
 // Se llena al cerrar OP. Se descuenta al crear entrega.
 
 function ptEntrada(opId,pedId,registrosConMicas,pzMalas){
-  // Las piezas que entran a PT son SIEMPRE las planeadas.
-  // La merma de micas y piezas malas afecta el consumo de materiales, no el PT.
-  // Si hubo piezas malas, se rehacen — el pedido se completa igual.
   registrosConMicas.forEach(function(r){
     const pzBase=r.esMaquila?r.pzm:r.pzm*(r.micas||1);
     if(pzBase<=0)return;
     inventarioPT.push({prod:r.prod,tam:r.tam,car:r.car,pz:pzBase,pedId:pedId,opId:opId,fecha:hoy()});
-    if(sbActivo){
-      sbReq('POST','inventario_pt',[{prod:r.prod,tam:r.tam,car:r.car,pz:pzBase,ped_id:pedId,op_id:opId,fecha:hoy()}],'?on_conflict=op_id,prod,tam,car').catch(function(){});
-    }
   });
 }
 
@@ -3549,6 +3558,10 @@ function ppMaqRefresh(){
       maqSec.innerHTML=`
         <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px;margin-bottom:10px">
           <div style="font-size:13px;font-weight:600;color:#c2410c;margin-bottom:8px">Partida de Maquila</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+            <label style="font-size:12px;color:#c2410c;font-weight:500">Modelo:</label>
+            <select id="pp-maq-mod" style="font-size:12px;border:1px solid #fed7aa;border-radius:6px;padding:3px 10px;color:#c2410c">${MODELOS.map(m=>`<option>${m}</option>`).join('')}</select>
+          </div>
           <div id="pp-maq-regs"></div>
           <div id="pp-maq-fcon"></div>
           <button class="btn bb" style="font-size:12px;border-color:#fed7aa;color:#c2410c;margin-top:6px" onclick="ppMaqShowForm()">+ Agregar producto / carácter</button>
@@ -3632,11 +3645,12 @@ function ppGuardarMaquila(){
   const pedId=document.getElementById('pp-ped')?.value;
   if(!ppMaqR.length){alert('Agrega al menos un producto');return;}
   const totalPz=ppMaqR.reduce((s,r)=>s+r.pzm,0);
+  const modeloMaq=document.getElementById('pp-maq-mod')?.value||'N/A';
   if(!diseños[opId])diseños[opId]=[];
   const numD=diseños[opId].length+1;
   const diseno={
     id:`D${String(numD).padStart(2,'0')}`,
-    maquina:'Maquila',micas:0,registros:[...ppMaqR],
+    maquina:'Maquila',micas:0,modelo:modeloMaq,registros:[...ppMaqR],
     totalPz,pedId,fecha:hoy(),ts:ahora(),esMaquila:true
   };
   diseños[opId].push(diseno);
