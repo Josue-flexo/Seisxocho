@@ -208,7 +208,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <select id="pp-maq" style="width:100%"><option>ATMA 1</option><option>ATMA 2</option><option>Kenteer</option></select>
     </div>
     <div class="fld"><label>Modelo</label>
-      <select id="pp-mod" style="width:100%"><option>HOME</option><option>AWAY</option><option>3RD</option><option>GK</option><option>N/A</option></select>
+      <select id="pp-mod" style="width:100%" onchange="ppCheckModelo()"><option>HOME</option><option>AWAY</option><option>3RD</option><option>GK</option><option>N/A</option></select>
+      <div id="pp-mod-warn" style="display:none;margin-top:5px;padding:6px 10px;border-radius:7px;font-size:12px;font-weight:500"></div>
     </div>
     <div class="div" style="margin:8px 0"></div>
     <div id="pp-copiar-btn"></div>
@@ -1022,7 +1023,8 @@ function npAddLinea(){
       <div class="fld" style="margin:0"><label>Técnica</label>
         <select id="nltek-${id}" style="width:100%">${TECNICAS.map(t=>`<option>${t}</option>`).join('')}</select></div>
     </div>`:''}
-    <button onclick="npRemLinea(${id})" style="font-size:11px;color:#b91c1c;background:none;border:none;cursor:pointer;margin-top:6px">× Eliminar</button>`;
+    <button onclick="npRemLinea(${id})" style="font-size:11px;color:#b91c1c;background:none;border:none;cursor:pointer;margin-top:6px">× Eliminar</button>
+    ${!esPap?`<button onclick="npDuplicarModelos(${id})" style="font-size:11px;color:#1d4ed8;background:none;border:none;cursor:pointer;margin-top:6px;margin-left:10px">⊕ Duplicar para todos los modelos</button>`:''}`;
   $('np-lineas').appendChild(div);
   npUpdT(id);
   npUpdPrecios();
@@ -1039,6 +1041,32 @@ function npUpdT(id){
   if(inp&&empresaActiva!=='papelito')inp.placeholder=sc?'Ej: Logo empresa':'Ej: 0-9, A-Z';
 }
 function npRemLinea(id){npLineas=npLineas.filter(x=>x!==id);$('nl-'+id)?.remove();npUpdPrecios();}
+function npDuplicarModelos(srcId){
+  const prod=document.getElementById('nlp-'+srcId)?.value;
+  const tam=document.getElementById('nlt-'+srcId)?.value;
+  const car=document.getElementById('nlc-'+srcId)?.value||'';
+  const cant=document.getElementById('nlq-'+srcId)?.value||'';
+  const modSrc=document.getElementById('nlmod-'+srcId)?.value||'HOME';
+  const tek=document.getElementById('nltek-'+srcId)?.value||'';
+  const targets=['HOME','AWAY','3RD'].filter(m=>m!==modSrc);
+  targets.forEach(mod=>{
+    npAddLinea();
+    const newId=npLineas[npLineas.length-1];
+    const elP=document.getElementById('nlp-'+newId);
+    if(elP&&prod){elP.value=prod;npUpdT(newId);}
+    const elT=document.getElementById('nlt-'+newId);
+    if(elT&&tam)elT.value=tam;
+    const elC=document.getElementById('nlc-'+newId);
+    if(elC)elC.value=car;
+    const elQ=document.getElementById('nlq-'+newId);
+    if(elQ)elQ.value=cant;
+    const elM=document.getElementById('nlmod-'+newId);
+    if(elM)elM.value=mod;
+    const elK=document.getElementById('nltek-'+newId);
+    if(elK&&tek)elK.value=tek;
+  });
+  npUpdPrecios();
+}
 function npUpdPrecios(){
   const box=$('np-precios-box'),cont=$('np-precios');
   if(!box||!cont)return;
@@ -3932,6 +3960,24 @@ function toggleEmpresa(){
   ppActualizarMaquinas();
   // Re-renderizar
   renderPeds();renderOPs();
+}
+function ppCheckModelo(){
+  const warn=$('pp-mod-warn');
+  if(!warn)return;
+  const mod=$('pp-mod')?.value;
+  if(!mod||mod==='N/A'){warn.style.display='none';return;}
+  if(!ppOpActual){warn.style.display='none';return;}
+  const ped=pedidos.find(p=>p.ops.some(o=>o.id===ppOpActual));
+  if(!ped||!ped.lineas?.length){warn.style.display='none';return;}
+  const modelosPed=[...new Set(ped.lineas.map(l=>l.modelo).filter(m=>m&&m!=='N/A'))];
+  if(!modelosPed.length){warn.style.display='none';return;}
+  if(modelosPed.includes(mod)){
+    warn.style.cssText='display:block;margin-top:5px;padding:6px 10px;border-radius:7px;font-size:12px;font-weight:500;background:#d1fae5;color:#065f46';
+    warn.textContent='✓ Modelo confirmado en el pedido';
+  } else {
+    warn.style.cssText='display:block;margin-top:5px;padding:6px 10px;border-radius:7px;font-size:12px;font-weight:500;background:#fee2e2;color:#991b1b';
+    warn.textContent=`⚠ "${mod}" no está en el pedido. Modelos registrados: ${modelosPed.join(', ')}`;
+  }
 }
 function ppActualizarMaquinas(){
   const sel=document.getElementById('pp-maq');
