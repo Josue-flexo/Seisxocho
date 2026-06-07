@@ -1631,7 +1631,7 @@ function ppRenderCopiarBtn(){
     if(prevDis.length){
       el.innerHTML=`<div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
         <select id="pp-copy-sel" style="flex:1;padding:8px;border:1px solid #86efac;border-radius:8px;font-size:12px;color:#15803d;background:#f0fdf4">
-          ${prevDis.map(d=>`<option value="${d.id}">Diseño ${d.id} · ${d.maquina} · ${d.micas} micas</option>`).join('')}
+          ${prevDis.map(d=>`<option value="${d.id}">Diseño ${d.id} · ${d.maquina}${d.modelo&&d.modelo!=='N/A'?' · '+d.modelo:''} · ${d.micas} micas</option>`).join('')}
         </select>
         <button class="btn bs" style="padding:7px 12px;font-size:12px;white-space:nowrap" onclick="ppCopiarDiseno()">↓ Copiar</button>
       </div>`;return;
@@ -1824,7 +1824,8 @@ function ppRenderCob(){
       d.registros.forEach(r=>{
         // Para SIN_CAR: key sin carácter para poder matchear independiente del car guardado
         const sinCar=SIN_CAR().includes(r.prod);
-        const k=sinCar?(r.prod+'|'+(r.tam||'')+'|'+(d.modelo||'N/A')):(r.prod+'|'+(r.tam||'')+'|'+r.car+'|'+(d.modelo||'N/A'));
+        const modeloKey=r.modelo||d.modelo||'N/A';
+        const k=sinCar?(r.prod+'|'+(r.tam||'')+'|'+modeloKey):(r.prod+'|'+(r.tam||'')+'|'+r.car+'|'+modeloKey);
         const pz=d.esMaquila?r.pzm:r.pzm*d.micas;
         ppMap[k]=(ppMap[k]||0)+pz;
       });
@@ -2462,6 +2463,30 @@ function ptEntrada(opId,pedId,registrosConMicas,pzMalas){
     if(pzBase<=0)return;
     inventarioPT.push({prod:r.prod,tam:r.tam,car:r.car,pz:pzBase,pedId:pedId,opId:opId,fecha:hoy()});
   });
+}
+async function repararPTFaltante(){
+  const opsConPT=new Set(inventarioPT.map(e=>e.opId));
+  const opsSinPT=opsCerradas.filter(oc=>!opsConPT.has(oc.opId));
+  if(!opsSinPT.length)return;
+  for(const oc of opsSinPT){
+    const dis=diseños[oc.opId]||[];
+    if(!dis.length)continue;
+    dis.forEach(d=>{
+      const regs=d.registros.map(r=>({...r,micas:d.micas||1,esMaquila:d.esMaquila||false}));
+      ptEntrada(oc.opId,oc.pedId,regs,oc.pzMalas||0);
+    });
+    if(sbActivo){
+      const ptForOp=inventarioPT.filter(e=>e.opId===oc.opId);
+      if(ptForOp.length){
+        await sbReq('DELETE','inventario_pt',null,`?op_id=eq.${oc.opId}`);
+        await sbReq('POST','inventario_pt',ptForOp.map(e=>({
+          prod:e.prod,tam:e.tam,car:e.car,pz:e.pz,
+          ped_id:e.pedId,op_id:e.opId,fecha:e.fecha
+        })));
+      }
+    }
+  }
+  renderPT();
 }
 
 function ptSaldoPorProducto(){
@@ -3495,6 +3520,8 @@ async function sbCargarDatos(silencioso=false){
     if(!silencioso)sbMostrarEstado('conectado');
     else sbMostrarEstado('conectado');
     console.log('Supabase cargado: '+pedidos.length+' pedidos, '+paros.length+' paros');
+    // Reparar PT faltante de OPs cerradas sin inventario en Supabase
+    repararPTFaltante();
     // Actualizar vistas — NO llamar ppRefresh para no sobreescribir preprensa activa
     renderPeds();renderOPs();renderPT();renderEntregas();renderParos();
     if(proInicializado)proRefresh();
@@ -3558,10 +3585,6 @@ function ppMaqRefresh(){
       maqSec.innerHTML=`
         <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px;margin-bottom:10px">
           <div style="font-size:13px;font-weight:600;color:#c2410c;margin-bottom:8px">Partida de Maquila</div>
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-            <label style="font-size:12px;color:#c2410c;font-weight:500">Modelo:</label>
-            <select id="pp-maq-mod" style="font-size:12px;border:1px solid #fed7aa;border-radius:6px;padding:3px 10px;color:#c2410c">${MODELOS.map(m=>`<option>${m}</option>`).join('')}</select>
-          </div>
           <div id="pp-maq-regs"></div>
           <div id="pp-maq-fcon"></div>
           <button class="btn bb" style="font-size:12px;border-color:#fed7aa;color:#c2410c;margin-top:6px" onclick="ppMaqShowForm()">+ Agregar producto / carácter</button>
@@ -3590,6 +3613,9 @@ function ppMaqShowForm(){
     <div class="fld" style="margin:0"><label>Tamaño</label>
       <select id="pmf-t" style="width:100%">${TAM()['Numero Dorsal'].map(t=>`<option>${t}</option>`).join('')}</select></div></div>
     <div class="fr" style="margin-top:8px">
+      <div class="fld" style="margin:0"><label>Modelo</label>
+        <select id="pmf-mod" style="width:100%">${MODELOS.map(m=>`<option>${m}</option>`).join('')}</select></div></div>
+    <div class="fr" style="margin-top:8px">
       <div class="fld" style="margin:0"><label id="pmf-cl">Carácter(es)*</label>
         <input type="text" id="pmf-c" placeholder="Ej: 0-9, A-Z" style="width:100%"></div>
       <div class="fld" style="margin:0"><label>Piezas por carácter</label>
@@ -3614,14 +3640,15 @@ function ppMaqAgregar(){
   const tam=document.getElementById('pmf-t')?.value;
   const car=(document.getElementById('pmf-c')?.value||'').trim();
   const cant=parseInt(document.getElementById('pmf-q')?.value)||0;
+  const modelo=document.getElementById('pmf-mod')?.value||'N/A';
   if(!SIN_CAR().includes(prod)&&!car){alert('Ingresa el carácter');return;}
   if(!cant){alert('Ingresa las piezas');return;}
   const carF=SIN_CAR().includes(prod)?(car||'N/A'):car;
   if(!SIN_CAR().includes(prod)){
     const v=validarCar(prod,carF);if(!v.ok){alert(v.msg);return;}
     const ex=expandir(carF,cant);if(!ex.ok){alert(ex.msg);return;}
-    ex.lines.forEach(l=>ppMaqR.push({prod,tam,car:l.car,pzm:l.cant,id:Date.now()+Math.random()}));
-  } else {ppMaqR.push({prod,tam,car:carF,pzm:cant,id:Date.now()});}
+    ex.lines.forEach(l=>ppMaqR.push({prod,tam,car:l.car,pzm:l.cant,modelo,id:Date.now()+Math.random()}));
+  } else {ppMaqR.push({prod,tam,car:carF,pzm:cant,modelo,id:Date.now()});}
   ppMaqCancelForm();ppMaqRender();ppRenderCob();
 }
 function ppMaqCancelForm(){
@@ -3633,7 +3660,7 @@ function ppMaqRender(){
   const el=document.getElementById('pp-maq-regs');if(!el)return;
   if(!ppMaqR.length){el.innerHTML='<div style="font-size:12px;color:#888;padding:6px 0">Sin productos aún.</div>';return;}
   el.innerHTML=ppMaqR.map(r=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #fed7aa;font-size:12px">
-    <span>${r.prod.replace('Numero ','Num.')} <b>${r.car}</b> · ${r.tam}</span>
+    <span>${r.prod.replace('Numero ','Num.')} <b>${r.car}</b> · ${r.tam}${r.modelo&&r.modelo!=='N/A'?' · <b style="color:#c2410c">'+r.modelo+'</b>':''}</span>
     <div style="display:flex;align-items:center;gap:8px">
       <span style="font-weight:600;color:#c2410c">${r.pzm.toLocaleString()} pz</span>
       <button onclick="ppMaqElim(${r.id})" style="width:22px;height:22px;border-radius:5px;border:1px solid #fca5a5;background:#fff;color:#b91c1c;cursor:pointer;font-size:14px">×</button>
@@ -3645,12 +3672,11 @@ function ppGuardarMaquila(){
   const pedId=document.getElementById('pp-ped')?.value;
   if(!ppMaqR.length){alert('Agrega al menos un producto');return;}
   const totalPz=ppMaqR.reduce((s,r)=>s+r.pzm,0);
-  const modeloMaq=document.getElementById('pp-maq-mod')?.value||'N/A';
   if(!diseños[opId])diseños[opId]=[];
   const numD=diseños[opId].length+1;
   const diseno={
     id:`D${String(numD).padStart(2,'0')}`,
-    maquina:'Maquila',micas:0,modelo:modeloMaq,registros:[...ppMaqR],
+    maquina:'Maquila',micas:0,modelo:'N/A',registros:[...ppMaqR],
     totalPz,pedId,fecha:hoy(),ts:ahora(),esMaquila:true
   };
   diseños[opId].push(diseno);
