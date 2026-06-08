@@ -1825,7 +1825,8 @@ function ppRenderCob(){
         // Para SIN_CAR: key sin carácter para poder matchear independiente del car guardado
         const sinCar=SIN_CAR().includes(r.prod);
         const modeloKey=r.modelo||d.modelo||'N/A';
-        const k=sinCar?(r.prod+'|'+(r.tam||'')+'|'+modeloKey):(r.prod+'|'+(r.tam||'')+'|'+r.car+'|'+modeloKey);
+        const kBase=sinCar?(r.prod+'|'+(r.tam||'')):(r.prod+'|'+(r.tam||'')+'|'+r.car);
+        const k=modeloKey==='N/A'?kBase:(sinCar?(r.prod+'|'+(r.tam||'')+'|'+modeloKey):(r.prod+'|'+(r.tam||'')+'|'+r.car+'|'+modeloKey));
         const pz=d.esMaquila?r.pzm:r.pzm*d.micas;
         ppMap[k]=(ppMap[k]||0)+pz;
       });
@@ -1857,8 +1858,10 @@ function ppRenderCob(){
   }
   const filas=lineas.map(l=>{
     const sinCar=SIN_CAR().includes(l.prod);
-    const k=sinCar?(l.prod+'|'+(l.tam||'')+'|'+(l.modelo||'N/A')):(l.prod+'|'+(l.tam||'')+'|'+l.car+'|'+(l.modelo||'N/A'));
-    const tiene=ppMap[k]||0;
+    const kBase=sinCar?(l.prod+'|'+(l.tam||'')):(l.prod+'|'+(l.tam||'')+'|'+l.car);
+    const kMod=(l.modelo&&l.modelo!=='N/A')?(sinCar?(l.prod+'|'+(l.tam||'')+'|'+l.modelo):(l.prod+'|'+(l.tam||'')+'|'+l.car+'|'+l.modelo)):kBase;
+    // Sumar piezas del key específico de modelo + key base (diseños legacy N/A)
+    const tiene=(ppMap[kMod]||0)+(kMod!==kBase?(ppMap[kBase]||0):0);
     const pct=l.cant>0?Math.round(tiene/l.cant*100):0;
     const sem=pct>=100?'🟢':pct>=80?'🟡':'🔴';
     const modTag=l.modelo&&l.modelo!=='N/A'?` <b style="color:#1d4ed8;font-size:10px">${l.modelo}</b>`:'';
@@ -3612,8 +3615,8 @@ function ppMaqShowForm(){
       <select id="pmf-p" onchange="ppMaqUpdT()" style="width:100%">${PRODS().map(p=>`<option>${p}</option>`).join('')}</select></div>
     <div class="fld" style="margin:0"><label>Tamaño</label>
       <select id="pmf-t" style="width:100%">${TAM()['Numero Dorsal'].map(t=>`<option>${t}</option>`).join('')}</select></div></div>
-    <div class="fr" style="margin-top:8px">
-      <div class="fld" style="margin:0"><label>Modelo</label>
+    <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+      <div class="fld" style="margin:0;flex:1"><label>Modelo</label>
         <select id="pmf-mod" style="width:100%">${MODELOS.map(m=>`<option>${m}</option>`).join('')}</select></div></div>
     <div class="fr" style="margin-top:8px">
       <div class="fld" style="margin:0"><label id="pmf-cl">Carácter(es)*</label>
