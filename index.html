@@ -103,7 +103,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tls{display:flex;flex-direction:column;align-items:center;gap:3px;z-index:1;flex:1}
 .tlc{width:24px;height:24px;border-radius:50%;border:2px solid #e5e7eb;background:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:#999}
 .tlc.done{background:#1a1a2e;border-color:#1a1a2e;color:#fff}
-.tll{font-size:9px;color:#999;text-align:center;line-height:1.2}.tll.done{color:#1a1a2e;font-weight:500}
+.tlc.prog{background:#f59e0b;border-color:#f59e0b;color:#fff}
+.tll{font-size:9px;color:#999;text-align:center;line-height:1.2}.tll.done{color:#1a1a2e;font-weight:500}.tll.prog{color:#f59e0b;font-weight:500}
 .tld{font-size:9px;color:#aaa;text-align:center}
 /* BARRAS BI */
 .bar-row{margin-bottom:8px}
@@ -732,26 +733,29 @@ function getEstOP(op){
   return'programada';
 }
 function renderTimeline(ped){
-  const td=ped.ops.some(o=>(diseños[o.id]||[]).length>0);
+  const hasDesigns=ped.ops.some(o=>(diseños[o.id]||[]).some(d=>(d.registros||[]).length>0));
   const allClosed=ped.ops.length>0&&(
     ped.ops.every(o=>opsCerradas.some(c=>c.opId===o.id))||
     (()=>{const tF=ped.ops.filter(o=>opsCerradas.some(c=>c.opId===o.id)).reduce((s,o)=>s+(getPzOP(o.id)||0),0);const tP=ped.lineas.reduce((s,l)=>s+l.cant,0);return tP>0&&tF>=tP;})()
   );
+  const someClosed=!allClosed&&ped.ops.some(o=>opsCerradas.some(c=>c.opId===o.id));
   const entsP=entregas.filter(e=>e.pedId===ped.id&&!e.archivado);
   const tenv=entsP.some(e=>e.status==='en_transito'||e.status==='entregado');
+  const allDelivered=tenv&&entsP.every(e=>e.status==='entregado');
   const tPed=ped.lineas.reduce((s,l)=>s+l.cant,0);
   const tEnt=entsP.filter(e=>e.status==='entregado').reduce((s,e)=>s+(e.totalPz||0),0);
   const tent=tPed>0&&tEnt>=tPed;
+  const entProg=!tent&&tEnt>0;
   const etapas=[
-    {l:'Pedido',done:true,f:ped.fechaCreacion||'—'},
-    {l:'Preprensa',done:td,f:td?'✓':'—'},
-    {l:'Producción',done:allClosed,f:allClosed?'✓':'—'},
-    {l:'En destino',done:tenv,f:tenv?'✓':'—'},
-    {l:'Entregado',done:tent,f:tent?'✓':'—'},
+    {l:'Pedido',     st:'done', f:ped.fechaCreacion||'—'},
+    {l:'Preprensa',  st:hasDesigns?'done':'',   f:hasDesigns?'✓':'—'},
+    {l:'Producción', st:allClosed?'done':someClosed?'prog':'', f:allClosed?'✓':someClosed?'↻':'—'},
+    {l:'En destino', st:allDelivered?'done':tenv?'prog':'', f:allDelivered?'✓':tenv?'↻':'—'},
+    {l:'Entregado',  st:tent?'done':entProg?'prog':'', f:tent?'✓':entProg?(Math.round(tEnt/tPed*100)+'%'):'—'},
   ];
   return`<div class="tl">${etapas.map((e,i)=>`<div class="tls">
-    <div class="tlc ${e.done?'done':''}">${e.done?'✓':i+1}</div>
-    <div class="tll ${e.done?'done':''}">${e.l}</div>
+    <div class="tlc ${e.st}">${e.st==='done'?'✓':e.st==='prog'?'↻':i+1}</div>
+    <div class="tll ${e.st}">${e.l}</div>
     <div class="tld">${e.f}</div>
   </div>`).join('')}</div>`;
 }
@@ -1984,6 +1988,22 @@ function proCargarOP(){
   proActInfo();
   if(tInt){clearInterval(tInt);tInt=null;}
   ests=EST_N.map(n=>({nombre:n,status:'pendiente',horaInicio:null,horaFin:null,fechaInicio:null,_ts:null,tiempoProductivo:0,tiempoMuerto:0,paros:[],operador:'',expanded:n==='Preprensa',mermaMicas:n==='Impresión'?0:undefined,pasadasRealesPorMaq:n==='Impresión'?{}:undefined,pzMalas:n==='Corte'?0:undefined,pzRechazadas:n==='Calidad'?0:undefined}));
+  // Restaurar estado pausado si existe
+  const opObj=ped?.ops.find(o=>o.id===opId);
+  if(opObj?.pauseState&&Array.isArray(opObj.pauseState)){
+    opObj.pauseState.forEach((saved,i)=>{
+      if(i<ests.length&&saved){
+        Object.assign(ests[i],{
+          status:saved.status==='corriendo'?'pausada':saved.status,
+          horaInicio:saved.horaInicio,horaFin:saved.horaFin,fechaInicio:saved.fechaInicio,
+          tiempoProductivo:saved.tiempoProductivo||0,paros:saved.paros||[],
+          operador:saved.operador||'',expanded:saved.expanded||false,
+          mermaMicas:saved.mermaMicas,pzMalas:saved.pzMalas,pzRechazadas:saved.pzRechazadas,
+          _ts:null
+        });
+      }
+    });
+  }
   renderEsts();
   $('pro-merma-info').style.display='none';
   $('pro-resultado').innerHTML='';
@@ -2022,17 +2042,21 @@ function renderEsts(){
     const elapsed=e.status==='corriendo'?Math.floor((Date.now()-e._ts)/1000):0;
     const tot=e.tiempoProductivo+elapsed;
     const tv=String(Math.floor(tot/60)).padStart(2,'0')+':'+String(tot%60).padStart(2,'0');
-    const bc=e.status==='completado'?'bg':e.status==='corriendo'?'by':'bgr';
-    const bt=e.status==='completado'?'✓ Listo':e.status==='corriendo'?'En proceso':'Pendiente';
-    // Botones — solo Impresión y Corte tienen paro
+    const bc=e.status==='completado'?'bg':e.status==='corriendo'?'by':e.status==='pausada'?'by':'bgr';
+    const bt=e.status==='completado'?'✓ Listo':e.status==='corriendo'?'En proceso':e.status==='pausada'?'⏸ Pausado':'Pendiente';
+    // Botones
     const tieneParo=e.nombre==='Impresión'||e.nombre==='Corte';
     const btns=e.status==='pendiente'
       ?`<button class="btn bp bblk" style="margin-top:8px" onclick="estIniciar(${i})">▶ Iniciar</button>`
       :e.status==='corriendo'
       ?`<div class="brow" style="margin-top:8px">
           ${tieneParo?`<button class="btn" style="flex:1" onclick="estParo(${i})">⏸ Paro</button>`:''}
-          <button class="btn bp" style="flex:${tieneParo?1:2}" onclick="estFinalizar(${i})">✓ Finalizar</button>
+          <button class="btn" style="flex:1;border-color:#f59e0b;color:#f59e0b" onclick="estPausarTurno(${i})">↓ Pausar turno</button>
+          <button class="btn bp" style="flex:1" onclick="estFinalizar(${i})">✓ Finalizar</button>
         </div>`
+      :e.status==='pausada'
+      ?`<div style="font-size:11px;color:#888;padding:4px 0;margin-top:4px">Acumulado: ${String(Math.floor(e.tiempoProductivo/60)).padStart(2,'0')}:${String(e.tiempoProductivo%60).padStart(2,'0')} · Pausado a las ${e.horaFin||'—'}</div>
+         <button class="btn bp bblk" style="margin-top:8px" onclick="estReanudar(${i})">▶ Reanudar</button>`
       :`<div style="font-size:11px;color:#15803d;padding:4px 0">${e.fechaInicio?e.fechaInicio.slice(5)+' ':''} ${e.horaInicio||'—'} → ${e.horaFin||'—'} · ${String(Math.floor(e.tiempoProductivo/60)).padStart(2,'0')}:${String(e.tiempoProductivo%60).padStart(2,'0')}</div>`;
     // Campos de merma (solo cuando está corriendo)
     const mFld=e.status==='corriendo'&&e.nombre==='Impresión'
@@ -2075,9 +2099,7 @@ function renderEsts(){
 }
 
 function estToggle(i){ests[i].expanded=!ests[i].expanded;renderEsts();}
-function estIniciar(i){
-  ests[i].status='corriendo';ests[i].horaInicio=ahora();ests[i].fechaInicio=hoy();ests[i]._ts=Date.now();ests[i].expanded=true;
-  renderEsts();
+function proStartTimer(){
   if(tInt)clearInterval(tInt);
   tInt=setInterval(function(){
     ests.forEach(function(e,i){
@@ -2090,6 +2112,43 @@ function estIniciar(i){
       }
     });
   },1000);
+}
+function estIniciar(i){
+  ests[i].status='corriendo';ests[i].horaInicio=ahora();ests[i].fechaInicio=hoy();ests[i]._ts=Date.now();ests[i].expanded=true;
+  renderEsts();
+  proStartTimer();
+}
+function estPausarTurno(i){
+  if(ests[i].status!=='corriendo')return;
+  const elapsed=Math.floor((Date.now()-ests[i]._ts)/1000);
+  ests[i].tiempoProductivo+=elapsed;
+  ests[i].horaFin=ahora();
+  ests[i].status='pausada';
+  ests[i]._ts=null;
+  if(!ests.some(e=>e.status==='corriendo')&&tInt){clearInterval(tInt);tInt=null;}
+  proGuardarPauseState();
+  renderEsts();
+}
+function estReanudar(i){
+  ests[i].status='corriendo';
+  ests[i]._ts=Date.now();
+  ests[i].horaFin=null;
+  ests[i].expanded=true;
+  proGuardarPauseState();
+  renderEsts();
+  proStartTimer();
+}
+function proGuardarPauseState(){
+  if(!opActual)return;
+  const ped=getPed(opActual.pedId);if(!ped)return;
+  const op=ped.ops.find(o=>o.id===opActual.opId);if(!op)return;
+  op.pauseState=ests.map(e=>({
+    nombre:e.nombre,status:e.status,horaInicio:e.horaInicio,horaFin:e.horaFin,
+    fechaInicio:e.fechaInicio,tiempoProductivo:e.tiempoProductivo,
+    paros:e.paros,operador:e.operador,expanded:e.expanded,
+    mermaMicas:e.mermaMicas,pzMalas:e.pzMalas,pzRechazadas:e.pzRechazadas
+  }));
+  sbActualizarPedido(ped);
 }
 function parToggleMaq(btn){
   const activo=btn.dataset.activo==='1';
@@ -2406,6 +2465,10 @@ function proCerrar(){
     }
   }
   opsCerradas.push({opId:opActual.opId,pedId:opActual.pedId,mermaMicas:mm,pzMalas:pm,pzRechazadas:pc2,pzPT:pzPT2,consumo,plan,pMic,pPz,totalMerma,efic,tPro,tMu,fecha:hoy(),ts:ahora()});
+  // Limpiar pauseState al cerrar OP
+  const pedParaPause=getPed(opActual.pedId);
+  const opParaPause=pedParaPause?.ops.find(o=>o.id===opActual.opId);
+  if(opParaPause?.pauseState){delete opParaPause.pauseState;if(pedParaPause)sbActualizarPedido(pedParaPause);}
   // Mostrar resultado
   // Guardar antes del reset de ests y opActual
   const esMaqCierre=proEsOpMaquila();
