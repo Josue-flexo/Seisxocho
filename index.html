@@ -733,7 +733,10 @@ function getEstOP(op){
 }
 function renderTimeline(ped){
   const td=ped.ops.some(o=>(diseños[o.id]||[]).length>0);
-  const allClosed=ped.ops.length>0&&ped.ops.every(o=>opsCerradas.some(c=>c.opId===o.id));
+  const allClosed=ped.ops.length>0&&(
+    ped.ops.every(o=>opsCerradas.some(c=>c.opId===o.id))||
+    (()=>{const tF=ped.ops.filter(o=>opsCerradas.some(c=>c.opId===o.id)).reduce((s,o)=>s+(getPzOP(o.id)||0),0);const tP=ped.lineas.reduce((s,l)=>s+l.cant,0);return tP>0&&tF>=tP;})()
+  );
   const entsP=entregas.filter(e=>e.pedId===ped.id&&!e.archivado);
   const tenv=entsP.some(e=>e.status==='en_transito'||e.status==='entregado');
   const tPed=ped.lineas.reduce((s,l)=>s+l.cant,0);
@@ -1905,7 +1908,7 @@ function proRefresh(){
   const ped=getPed(sel.value);
   const selOP=$('pro-op'),curOP=selOP.value;
   if(ped){
-    const opsAbiertas=ped.ops.filter(o=>!opsCerradas.some(c=>c.opId===o.id));
+    const opsAbiertas=ped.ops.filter(o=>!opsCerradas.some(c=>c.opId===o.id)&&(diseños[o.id]||[]).length>0);
     if(!opsAbiertas.length){
       selOP.innerHTML='<option value="">Todas las partidas cerradas</option>';
       if(!opActual){
@@ -1930,7 +1933,7 @@ function proCargaPed(){
   const ped=getPed($('pro-ped').value);
   const sel=$('pro-op');if(!ped){sel.innerHTML='';return;}
   // Solo mostrar OPs que NO están cerradas
-  const opsAbiertas=ped.ops.filter(o=>!opsCerradas.some(c=>c.opId===o.id));
+  const opsAbiertas=ped.ops.filter(o=>!opsCerradas.some(c=>c.opId===o.id)&&(diseños[o.id]||[]).length>0);
   sel.innerHTML=opsAbiertas.map(o=>{
     const esMaq=o.maquila?'  [Maquila]':'';
     return`<option value="${o.id}">Partida ${o.num}${esMaq}</option>`;
