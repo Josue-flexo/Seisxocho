@@ -300,6 +300,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <button class="seg" onclick="opsFiltro('abierta',this)">Abiertas</button>
       <button class="seg" onclick="opsFiltro('cerrada',this)">Cerradas</button>
     </div>
+    <div style="display:flex;gap:8px;margin:8px 0;align-items:center">
+      <input id="ops-buscar" type="text" placeholder="🔍 Buscar por folio, cliente, producto…" oninput="opsQuery=this.value;renderOPs()"
+        style="flex:1;padding:8px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:13px">
+      <button id="ops-hist-btn" onclick="opsVerHistorial=!opsVerHistorial;this.classList.toggle('on');renderOPs()"
+        class="seg" style="white-space:nowrap;font-size:12px">📦 Ver historial</button>
+    </div>
     <div id="ops-list"></div>
   </div>
 </div>
@@ -664,6 +670,9 @@ let ppM=100, ppR=[], ppFOpen=false, ppOpActual=null, ppInicializado=false;
 let ests=[], tInt=null, estParoIdx=null, opActual=null, proInicializado=false;
 // UI
 let pedFilt='activos', opsFilt2='todas', parSeg='todo', entPedActual=null, entTiendasIds=[];
+let ptExpandState={};  // {pedId: true=expandido, false/undefined=colapsado}
+let opsQuery='';       // texto del buscador de OPs
+let opsVerHistorial=false; // toggle para mostrar OPs cerradas más de 14 días
 let pedIdCambio=null, npLineas=[];
 
 // ════════════════════════════════════════════════════════
@@ -2460,6 +2469,15 @@ function proCerrar(){
 // inventarioPT = [{prod,tam,car,pz,pedId,opId,fecha}]
 // Se llena al cerrar OP. Se descuenta al crear entrega.
 
+function togglePTCard(pedId){
+  ptExpandState[pedId]=!ptExpandState[pedId];
+  const cardId='ptcard-'+pedId.replace(/[^a-z0-9]/gi,'');
+  const d=document.getElementById(cardId);
+  const ic=document.getElementById(cardId+'-ic');
+  if(d)d.style.display=ptExpandState[pedId]?'block':'none';
+  if(ic)ic.textContent=ptExpandState[pedId]?'\u25bc':'\u25b6';
+}
+
 function ptEntrada(opId,pedId,registrosConMicas,pzMalas){
   registrosConMicas.forEach(function(r){
     const pzBase=r.esMaquila?r.pzm:r.pzm*(r.micas||1);
@@ -2468,28 +2486,32 @@ function ptEntrada(opId,pedId,registrosConMicas,pzMalas){
   });
 }
 async function repararPTFaltante(){
-  const opsConPT=new Set(inventarioPT.map(e=>e.opId));
-  const opsSinPT=opsCerradas.filter(oc=>!opsConPT.has(oc.opId));
-  if(!opsSinPT.length)return;
-  for(const oc of opsSinPT){
-    const dis=diseños[oc.opId]||[];
-    if(!dis.length)continue;
-    dis.forEach(d=>{
-      const regs=d.registros.map(r=>({...r,micas:d.micas||1,esMaquila:d.esMaquila||false}));
-      ptEntrada(oc.opId,oc.pedId,regs,oc.pzMalas||0);
-    });
-    if(sbActivo){
-      const ptForOp=inventarioPT.filter(e=>e.opId===oc.opId);
-      if(ptForOp.length){
-        await sbReq('DELETE','inventario_pt',null,`?op_id=eq.${oc.opId}`);
-        await sbReq('POST','inventario_pt',ptForOp.map(e=>({
-          prod:e.prod,tam:e.tam,car:e.car,pz:e.pz,
-          ped_id:e.pedId,op_id:e.opId,fecha:e.fecha
-        })));
+  try{
+    const opsConPT=new Set(inventarioPT.map(e=>e.opId));
+    const opsSinPT=opsCerradas.filter(oc=>!opsConPT.has(oc.opId));
+    if(!opsSinPT.length)return;
+    console.log('repararPT: '+opsSinPT.length+' OPs sin PT',opsSinPT.map(o=>o.opId));
+    for(const oc of opsSinPT){
+      const dis=diseños[oc.opId]||[];
+      if(!dis.length){console.warn('repararPT: sin diseños para',oc.opId);continue;}
+      dis.forEach(d=>{
+        const regs=(d.registros||[]).map(r=>({...r,micas:d.micas||1,esMaquila:d.esMaquila||false}));
+        if(regs.length)ptEntrada(oc.opId,oc.pedId,regs,oc.pzMalas||0);
+      });
+      if(sbActivo){
+        const ptForOp=inventarioPT.filter(e=>e.opId===oc.opId);
+        if(ptForOp.length){
+          await sbReq('DELETE','inventario_pt',null,`?op_id=eq.${oc.opId}`);
+          await sbReq('POST','inventario_pt',ptForOp.map(e=>({
+            prod:e.prod,tam:e.tam,car:e.car,pz:e.pz,
+            ped_id:e.pedId,op_id:e.opId,fecha:e.fecha
+          })));
+          console.log('repararPT: guardado',oc.opId,ptForOp.length,'registros');
+        }
       }
     }
-  }
-  renderPT();
+    renderPT();
+  }catch(err){console.error('repararPT error:',err);renderPT();}
 }
 
 function ptSaldoPorProducto(){
@@ -2547,7 +2569,29 @@ function renderOPs(){
   const cerr=all.filter(o=>getEstOP(o)==='cerrada').length;
   const elP=$('ops-prog'),elA=$('ops-ab'),elC=$('ops-cerr');
   if(elP)elP.textContent=prog;if(elA)elA.textContent=ab;if(elC)elC.textContent=cerr;
-  const filt=opsFilt2==='todas'?all:all.filter(o=>getEstOP(o)===opsFilt2);
+  let filt=opsFilt2==='todas'?all:all.filter(o=>getEstOP(o)===opsFilt2);
+  // Filtro historial: ocultar cerradas > 14 días si no está activo
+  if(!opsVerHistorial){
+    const corte=new Date();corte.setDate(corte.getDate()-14);
+    const corteStr=corte.toISOString().slice(0,10);
+    filt=filt.filter(o=>{
+      if(getEstOP(o)!=='cerrada')return true;
+      const oc=opsCerradas.find(c=>c.opId===o.id);
+      return !oc?.fecha||oc.fecha>=corteStr;
+    });
+  }
+  // Filtro búsqueda
+  if(opsQuery.trim()){
+    const q=opsQuery.trim().toLowerCase();
+    filt=filt.filter(o=>{
+      const ped=o.ped;
+      return o.id.toLowerCase().includes(q)||
+        (ped?.cliente||'').toLowerCase().includes(q)||
+        (ped?.nombre||'').toLowerCase().includes(q)||
+        (ped?.folio||'').toLowerCase().includes(q)||
+        (diseños[o.id]||[]).some(d=>(d.registros||[]).some(r=>(r.prod||'').toLowerCase().includes(q)));
+    });
+  }
   const el=$('ops-list');if(!el)return;
   if(!filt.length){el.innerHTML='<div class="empty">Sin OPs en este filtro.</div>';return;}
   el.innerHTML=filt.map(o=>{
@@ -3804,10 +3848,11 @@ function renderPT(){
     }).join('');
 
     const ptCardId='ptcard-'+ped.pedId.replace(/[^a-z0-9]/gi,'');
+    const expandido=ptExpandState[ped.pedId]===true;
     return`<div class="card" style="margin-bottom:10px">
       <!-- Header colapsable -->
       <div style="cursor:pointer;display:flex;justify-content:space-between;align-items:center"
-        onclick="const d=document.getElementById('${ptCardId}');const ic=document.getElementById('${ptCardId}-ic');d.style.display=d.style.display==='none'?'block':'none';ic.textContent=d.style.display==='none'?'▶':'▼'">
+        onclick="togglePTCard('${ped.pedId}')">
         <div>
           <div class="cid">${ped.pedId}</div>
           <div class="ctit">${pedObj?.cliente||'—'} · ${pedObj?.nombre||'—'}</div>
@@ -3817,11 +3862,11 @@ function renderPT(){
             <div style="font-size:18px;font-weight:700;color:#1a1a2e">${totalDisp.toLocaleString()}</div>
             <div style="font-size:10px;color:#888">pz disponibles</div>
           </div>
-          <span id="${ptCardId}-ic" style="font-size:14px;color:#888">▼</span>
+          <span id="${ptCardId}-ic" style="font-size:14px;color:#888">${expandido?'▼':'▶'}</span>
         </div>
       </div>
       <!-- Contenido colapsable -->
-      <div id="${ptCardId}">
+      <div id="${ptCardId}" style="display:${expandido?'block':'none'}">
         <div style="margin:10px 0">${totalHTML}</div>
         <details>
           <summary style="font-size:11px;color:#888;cursor:pointer;padding:4px 0">Ver desglose por partida</summary>
