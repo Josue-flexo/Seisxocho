@@ -1908,7 +1908,7 @@ function proRefresh(){
   const ped=getPed(sel.value);
   const selOP=$('pro-op'),curOP=selOP.value;
   if(ped){
-    const opsAbiertas=ped.ops.filter(o=>!opsCerradas.some(c=>c.opId===o.id)&&(diseños[o.id]||[]).length>0);
+    const opsAbiertas=ped.ops.filter(o=>!opsCerradas.some(c=>c.opId===o.id)&&(diseños[o.id]||[]).some(d=>(d.registros||[]).length>0));
     if(!opsAbiertas.length){
       selOP.innerHTML='<option value="">Todas las partidas cerradas</option>';
       if(!opActual){
@@ -1933,7 +1933,7 @@ function proCargaPed(){
   const ped=getPed($('pro-ped').value);
   const sel=$('pro-op');if(!ped){sel.innerHTML='';return;}
   // Solo mostrar OPs que NO están cerradas
-  const opsAbiertas=ped.ops.filter(o=>!opsCerradas.some(c=>c.opId===o.id)&&(diseños[o.id]||[]).length>0);
+  const opsAbiertas=ped.ops.filter(o=>!opsCerradas.some(c=>c.opId===o.id)&&(diseños[o.id]||[]).some(d=>(d.registros||[]).length>0));
   sel.innerHTML=opsAbiertas.map(o=>{
     const esMaq=o.maquila?'  [Maquila]':'';
     return`<option value="${o.id}">Partida ${o.num}${esMaq}</option>`;
