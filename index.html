@@ -673,6 +673,7 @@ let pedFilt='activos', opsFilt2='todas', parSeg='todo', entPedActual=null, entTi
 let ptExpandState={};  // {pedId: true=expandido, false/undefined=colapsado}
 let opsQuery='';       // texto del buscador de OPs
 let opsVerHistorial=false; // toggle para mostrar OPs cerradas más de 14 días
+let pedAbierto=null;   // pedId del detalle actualmente visible
 let pedIdCambio=null, npLineas=[];
 
 // ════════════════════════════════════════════════════════
@@ -685,7 +686,7 @@ function fmt(s){return`${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60
 function minDiff(hi,hf){const[ah,am]=hi.split(':').map(Number);const[bh,bm]=hf.split(':').map(Number);return(bh*60+bm)-(ah*60+am)}
 function getPed(id){return pedidos.find(p=>p.id===id)}
 function getMicasOP(opId){return(diseños[opId]||[]).reduce((s,d)=>s+d.micas,0)}
-function getPzOP(opId){return(diseños[opId]||[]).reduce((s,d)=>s+d.totalPz,0)}
+function getPzOP(opId){return(diseños[opId]||[]).reduce((s,d)=>s+(d.totalPz||0),0)}
 function abrirModal(id){$(id).classList.add('open')}
 function cerrarModal(id){$(id).classList.remove('open')}
 
@@ -732,15 +733,16 @@ function getEstOP(op){
 }
 function renderTimeline(ped){
   const td=ped.ops.some(o=>(diseños[o.id]||[]).length>0);
-  const tc=ped.ops.some(o=>opsCerradas.some(c=>c.opId===o.id));
-  const entsP=entregas.filter(e=>e.pedId===ped.id);
-  const tenv=entsP.length>0; // hay al menos una entrega creada (en destino o entregada)
-  // Entregado = todas las entregas activas están confirmadas completamente
-  const tent=entsP.length>0&&entsP.filter(e=>!e.archivado).every(e=>e.status==='entregado');
+  const allClosed=ped.ops.length>0&&ped.ops.every(o=>opsCerradas.some(c=>c.opId===o.id));
+  const entsP=entregas.filter(e=>e.pedId===ped.id&&!e.archivado);
+  const tenv=entsP.some(e=>e.status==='en_transito'||e.status==='entregado');
+  const tPed=ped.lineas.reduce((s,l)=>s+l.cant,0);
+  const tEnt=entsP.filter(e=>e.status==='entregado').reduce((s,e)=>s+(e.totalPz||0),0);
+  const tent=tPed>0&&tEnt>=tPed;
   const etapas=[
     {l:'Pedido',done:true,f:ped.fechaCreacion||'—'},
     {l:'Preprensa',done:td,f:td?'✓':'—'},
-    {l:'Producción',done:tc,f:tc?'✓':'—'},
+    {l:'Producción',done:allClosed,f:allClosed?'✓':'—'},
     {l:'En destino',done:tenv,f:tenv?'✓':'—'},
     {l:'Entregado',done:tent,f:tent?'✓':'—'},
   ];
@@ -803,6 +805,7 @@ function pedFiltro(f,btn){
   renderPeds();
 }
 function renderPeds(){
+  if(pedAbierto){abrirPedido(pedAbierto);return;}
   const el=$('ped-body');if(!el)return;
   if(pedFilt==='dashboard'){
     const act=pedidos.filter(p=>!p.archivado);
@@ -844,7 +847,8 @@ function renderPeds(){
     </div>`;}).join('');
 }
 function abrirPedido(pedId){
-  const ped=getPed(pedId);if(!ped)return;
+  pedAbierto=pedId;
+  const ped=getPed(pedId);if(!ped){pedAbierto=null;renderPeds();return;}
   const tPed=ped.lineas.reduce((s,l)=>s+l.cant,0);
   const entsP=entregas.filter(e=>e.pedId===pedId);
   // Solo contar piezas de entregas que ya fueron confirmadas (status=entregado)
@@ -866,7 +870,7 @@ function abrirPedido(pedId){
       <div style="font-size:11px;color:#666;margin-bottom:6px">${(e.tiendas||[]).map(t=>`${t.confirmado?'✓':'○'} ${t.nombre} (${(t.productos||[]).map(p=>p.prod.replace('Numero ','Num.')+' '+p.car+':'+p.pz).join(', ')||t.pz+'pz'})`).join(' · ')}</div>
     </div>`;}).join(''):'<div class="empty" style="padding:10px 0">Sin entregas aún.</div>';
   $('ped-body').innerHTML=`
-    <button class="btn bb" style="margin-bottom:10px" onclick="renderPeds()">← Volver</button>
+    <button class="btn bb" style="margin-bottom:10px" onclick="pedAbierto=null;renderPeds()">← Volver</button>
     <div class="card">
       <div class="cid">${ped.id}${ped.folio?' · '+ped.folio:''}</div>
       <div class="ctit">${ped.cliente}</div><div class="csub">${ped.nombre}</div>
@@ -2372,20 +2376,21 @@ function proCerrar(){
   const tpzFab=opActual?getPzOP(opActual.opId):0;
   const pc2=0;
   const pzPT2=Math.max(0,tpzFab-pm);
-  // Registrar entrada a PT por producto/carácter
-  if(pzPT2>0&&opActual){
+  // Registrar entrada a PT — se guarda siempre que haya diseños con registros,
+  // independiente de pzPT2 (que puede ser 0 si totalPz es null en Supabase)
+  if(opActual){
     const dis=diseños[opActual.opId]||[];
     dis.forEach(d=>{
-      const regsConMicas=d.registros.map(r=>({
+      const regsConMicas=(d.registros||[]).map(r=>({
         ...r,
         micas: d.micas||1,
         esMaquila: d.esMaquila||false
       }));
-      ptEntrada(opActual.opId,opActual.pedId,regsConMicas,pm);
+      if(regsConMicas.length) ptEntrada(opActual.opId,opActual.pedId,regsConMicas,pm);
     });
-    // Guardar PT en Supabase: DELETE + INSERT (evita necesitar unique constraint)
+    // Guardar PT en Supabase: DELETE + INSERT
     if(sbActivo){
-      const opIdPT=opActual.opId,pedIdPT=opActual.pedId;
+      const opIdPT=opActual.opId;
       sbReq('DELETE','inventario_pt',null,`?op_id=eq.${opIdPT}`).then(()=>{
         const ptForOp=inventarioPT.filter(e=>e.opId===opIdPT);
         if(ptForOp.length){
@@ -3568,7 +3573,7 @@ async function sbCargarDatos(silencioso=false){
     else sbMostrarEstado('conectado');
     console.log('Supabase cargado: '+pedidos.length+' pedidos, '+paros.length+' paros');
     // Reparar PT faltante de OPs cerradas sin inventario en Supabase
-    repararPTFaltante();
+    await repararPTFaltante();
     // Actualizar vistas — NO llamar ppRefresh para no sobreescribir preprensa activa
     renderPeds();renderOPs();renderPT();renderEntregas();renderParos();
     if(proInicializado)proRefresh();
@@ -4192,6 +4197,7 @@ function sbIniciarPolling(){
         }
       }
       // Actualizar UI DESPUÉS de tener todos los datos actualizados
+      await repararPTFaltante();
       renderPeds();
       renderOPs();
       renderPT();
