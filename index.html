@@ -2495,16 +2495,19 @@ function ptEntrada(opId,pedId,registrosConMicas,pzMalas){
 }
 async function repararPTFaltante(){
   try{
-    const opsConPT=new Set(inventarioPT.map(e=>e.opId));
-    const opsSinPT=opsCerradas.filter(oc=>!opsConPT.has(oc.opId));
-    if(!opsSinPT.length)return;
-    console.log('repararPT: '+opsSinPT.length+' OPs sin PT',opsSinPT.map(o=>o.opId));
-    for(const oc of opsSinPT){
+    // Reconstruir PT para TODAS las OPs cerradas que tienen diseños con registros
+    // Siempre sobreescribe — garantiza consistencia aunque haya entradas parciales o corruptas
+    const opsConDiseños=opsCerradas.filter(oc=>(diseños[oc.opId]||[]).some(d=>(d.registros||[]).length>0));
+    if(!opsConDiseños.length)return;
+    // Limpiar entradas locales existentes para estas OPs y reconstruir
+    const opIdsARepararSet=new Set(opsConDiseños.map(oc=>oc.opId));
+    inventarioPT=inventarioPT.filter(e=>!opIdsARepararSet.has(e.opId));
+    let reparadas=0;
+    for(const oc of opsConDiseños){
       const dis=diseños[oc.opId]||[];
-      if(!dis.length){console.warn('repararPT: sin diseños para',oc.opId);continue;}
       dis.forEach(d=>{
         const regs=(d.registros||[]).map(r=>({...r,micas:d.micas||1,esMaquila:d.esMaquila||false}));
-        if(regs.length)ptEntrada(oc.opId,oc.pedId,regs,oc.pzMalas||0);
+        if(regs.length)ptEntrada(oc.opId,oc.pedId,regs,0);
       });
       if(sbActivo){
         const ptForOp=inventarioPT.filter(e=>e.opId===oc.opId);
@@ -2514,10 +2517,11 @@ async function repararPTFaltante(){
             prod:e.prod,tam:e.tam,car:e.car,pz:e.pz,
             ped_id:e.pedId,op_id:e.opId,fecha:e.fecha
           })));
-          console.log('repararPT: guardado',oc.opId,ptForOp.length,'registros');
+          reparadas++;
         }
       }
     }
+    if(reparadas>0)console.log('repararPT: '+reparadas+' OPs sincronizadas con Supabase');
     renderPT();
   }catch(err){console.error('repararPT error:',err);renderPT();}
 }
@@ -2615,7 +2619,7 @@ function renderOPs(){
           <div style="font-size:11px;color:#888">${o.ped.cliente} · ${o.ped.nombre} · Partida ${o.num}</div></div>
         <span class="bdg ${bc}">${est==='programada'?'Sin diseños':est==='abierta'?'Con diseños':'Cerrada'}</span>
       </div>
-      <div style="font-size:11px;color:#666">${dis.length?`${dis.length} diseño${dis.length!==1?'s':''} · ${mqs.join(', ')} · ${getMicasOP(o.id)} micas`:'Sin diseños'}</div>
+      <div style="font-size:11px;color:#666">${dis.length?`${dis.length} diseño${dis.length!==1?'s':''} · ${mqs.join(', ')} · ${getMicasOP(o.id)} micas · ${getPzOP(o.id).toLocaleString()} pz`:'Sin diseños'}</div>
       ${cerr?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid #eee;font-size:11px;color:#666;display:flex;gap:12px"><span>Merma: ${cerr.totalMerma}%</span><span>Efic: ${cerr.efic}%</span><span>${cerr.fecha} ${cerr.ts}</span></div>`:''}
     </div>`;}).join('');
 }
